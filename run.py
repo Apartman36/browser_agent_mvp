@@ -2,14 +2,37 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
-from rich.console import Console
-from rich.panel import Panel
 
-from agent.browser import Browser
-from agent.core import run_agent
+def _force_utf8_io() -> None:
+    """Force stdin/stdout/stderr to UTF-8 so logs and reports don't get mojibake on Windows.
+
+    Why: on Windows the default for `sys.stdin/stdout/stderr` is the system ANSI code page
+    (e.g. cp1251), so any Russian/Unicode text passing through `input()` or `print()` can be
+    re-encoded incorrectly before reaching disk. Forcing UTF-8 here keeps both the terminal
+    and the files written under `logs/` consistent.
+    """
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    os.environ.setdefault("PYTHONUTF8", "1")
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
+_force_utf8_io()
+
+from dotenv import load_dotenv  # noqa: E402
+from rich.console import Console  # noqa: E402
+from rich.panel import Panel  # noqa: E402
+
+from agent.browser import Browser  # noqa: E402
+from agent.core import run_agent  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:

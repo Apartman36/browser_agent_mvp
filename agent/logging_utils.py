@@ -30,7 +30,8 @@ def append_action_log(
         "url": obs.get("url", ""),
         "title": obs.get("title", ""),
     }
-    with (LOG_DIR / "actions.jsonl").open("a", encoding="utf-8") as file:
+    # newline="\n" prevents Windows from rewriting "\n" as "\r\n" inside a JSONL line.
+    with (LOG_DIR / "actions.jsonl").open("a", encoding="utf-8", newline="\n") as file:
         file.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
 
 
@@ -45,6 +46,20 @@ def write_final_report(goal: str, status: str, summary: str) -> Path:
         "## Summary\n\n"
         f"{summary.strip()}\n"
     )
-    path.write_text(content, encoding="utf-8")
+    path.write_text(content, encoding="utf-8", newline="\n")
     return path
+
+
+def read_action_log() -> list[dict[str, Any]]:
+    path = LOG_DIR / "actions.jsonl"
+    if not path.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as file:
+        for line in file:
+            line = line.strip()
+            if not line:
+                continue
+            records.append(json.loads(line))
+    return records
 

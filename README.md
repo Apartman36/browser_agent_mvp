@@ -23,6 +23,21 @@ copy .env.example .env
 
 Edit `.env` and set `OPENROUTER_API_KEY`.
 
+### Pre-flight on Windows (PowerShell)
+
+Make sure the terminal and Python are both in UTF-8 mode so Russian text in
+`logs/actions.jsonl` and `logs/final_report.md` is not corrupted into mojibake
+(e.g. `РџРѕСЃ...`). Run once per shell before launching the agent:
+
+```powershell
+chcp 65001            # console code page to UTF-8
+$env:PYTHONUTF8 = "1" # Python wide UTF-8 mode for this session
+$env:PYTHONIOENCODING = "utf-8"
+```
+
+`run.py` also reconfigures `sys.stdin/stdout/stderr` to UTF-8 at startup, so
+`input()` answers and prompts are safe even if you forget the variables above.
+
 ```powershell
 python run.py --start-url https://hh.ru --login-wait "Найди 2 вакансии AI engineer в Москве на hh.ru, изучи описание и подготовь короткие сопроводительные письма. Перед отправкой откликов обязательно спроси подтверждение."
 ```
@@ -35,8 +50,9 @@ python run.py --start-url https://hh.ru --login-wait "Найди 2 ваканс�
 2. The planner LLM returns exactly one JSON action.
 3. The safety gate blocks irreversible actions until the user confirms.
 4. Browser tools execute through current ARIA refs such as `aria-ref=e7`.
-5. Memory stores compact facts and only the last 8 action results.
-6. Logs and final report are written under `logs/`.
+5. A `query_page` sub-agent answers focused questions about the current page (titles, ref tables, salaries) without bloating the main loop.
+6. Memory stores compact facts and only the last 8 action results.
+7. Logs and final report are written under `logs/` as UTF-8 (JSONL with `ensure_ascii=False`).
 
 ## Why this is not hardcoded
 
@@ -60,6 +76,12 @@ Select-String -Path .\agent\*.py -Pattern "hh.ru|вакан|data-qa|querySelecto
 ```
 
 Expected result for `agent/`: empty.
+
+Forbidden-framework check (must also be empty):
+
+```powershell
+Select-String -Path .\agent\*.py -Pattern "browser_use|skyvern|stagehand|selenium" -CaseSensitive:$false
+```
 
 ## Tool surface
 
