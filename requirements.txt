@@ -1,0 +1,7 @@
+playwright>=1.59
+openai>=2.36
+python-dotenv>=1.2
+rich>=15.0
+pydantic>=2.13
+pytest>=9.0
+
