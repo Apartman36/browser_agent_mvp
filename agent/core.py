@@ -13,6 +13,10 @@ from agent.safety import is_high_risk, user_confirmed
 from agent.tools import ToolDispatcher, compact_json
 
 
+LLM_FALLBACK_RETRY_ANSWERS = {"retry", "r", "повтор", "повтори"}
+LLM_FALLBACK_STOP_ANSWERS = {"stop", "s", "стоп"}
+
+
 def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClient | None = None) -> dict[str, Any]:
     console = Console()
     llm = llm_client or LLMClient()
@@ -48,6 +52,25 @@ def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClien
             memory.merge_facts(action.get("new_facts", {}))
             memory.add_action(action, result)
             append_action_log(step, action, result, obs)
+
+            if _is_llm_provider_fallback_action(action):
+                decision = _llm_provider_fallback_decision(result)
+                if decision == "retry":
+                    console.print("[yellow]Retry requested after LLM provider error.[/yellow]")
+                    continue
+                if decision == "stop":
+                    summary = "Stopped by user after the LLM provider returned an error or rate limit."
+                    report_path = write_final_report(goal, "stopped_by_user", summary)
+                    console.print(Panel(summary, title="Final report: stopped_by_user", border_style="yellow"))
+                    console.print(f"[dim]Saved final report:[/dim] {report_path}")
+                    return {
+                        "ok": False,
+                        "status": "stopped_by_user",
+                        "summary": summary,
+                        "report_path": str(report_path),
+                    }
+                console.print("[yellow]Continuing after LLM provider fallback answer.[/yellow]")
+                continue
 
             if action.get("tool") == "done":
                 status = str(action.get("args", {}).get("status", result.get("data", {}).get("status", "success")))
@@ -95,3 +118,18 @@ def _execute_with_safety(
 def pretty_action(action: dict[str, Any]) -> str:
     return json.dumps(action, ensure_ascii=False, indent=2, default=str)
 
+
+def _is_llm_provider_fallback_action(action: dict[str, Any]) -> bool:
+    if action.get("tool") != "ask_user":
+        return False
+    question = str((action.get("args") or {}).get("question", ""))
+    return "LLM provider returned an error or rate limit" in question
+
+
+def _llm_provider_fallback_decision(result: dict[str, Any]) -> str:
+    answer = str(result.get("data", {}).get("answer", "")).strip().lower()
+    if answer in LLM_FALLBACK_RETRY_ANSWERS:
+        return "retry"
+    if answer in LLM_FALLBACK_STOP_ANSWERS:
+        return "stop"
+    return "continue"

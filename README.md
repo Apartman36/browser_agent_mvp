@@ -23,6 +23,21 @@ copy .env.example .env
 
 Edit `.env` and set `OPENROUTER_API_KEY`.
 
+Recommended model settings:
+
+```env
+MODEL=google/gemma-4-31b-it:free
+MODEL_FALLBACKS=google/gemma-4-26b-a4b-it:free,z-ai/glm-4.5-air:free,inclusionai/ring-2.6-1t:free
+MODEL_VERIFIER=google/gemma-4-31b-it:free
+```
+
+Free OpenRouter providers can rate-limit or fail upstream, so the client retries provider
+errors and then tries `MODEL_FALLBACKS` in order. To force one model only, set `MODEL`
+and leave `MODEL_FALLBACKS` empty.
+
+The LLM client is OpenAI-compatible. LM Studio/Ollama support could be added later by
+making `base_url` configurable, but this MVP uses OpenRouter for a reproducible demo.
+
 ### Pre-flight on Windows (PowerShell)
 
 Make sure the terminal and Python are both in UTF-8 mode so Russian text in
@@ -140,7 +155,9 @@ hh.ru flow:
 - No vision fallback.
 - No CAPTCHA solving.
 - ARIA snapshot quality depends on website accessibility.
-- Free OpenRouter models may rate-limit or produce weaker JSON.
+- Free OpenRouter models may rate-limit or produce weaker JSON; retries and fallback
+  models are implemented for demo robustness.
+- LM Studio/Ollama local provider wiring is future work.
 
 ## Useful commands
 

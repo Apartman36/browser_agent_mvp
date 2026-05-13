@@ -14,7 +14,7 @@ def main() -> int:
         print("OPENROUTER_API_KEY is missing. Create .env from .env.example and add the key.")
         return 1
 
-    model = os.getenv("MODEL", "openai/gpt-oss-120b:free")
+    model = os.getenv("MODEL", "google/gemma-4-31b-it:free")
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=api_key,
@@ -40,4 +40,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

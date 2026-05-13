@@ -166,11 +166,16 @@ class Browser:
 
     def extract_text(self, ref: str | None = None) -> dict[str, Any]:
         try:
-            locator = self._page().locator(f"aria-ref={ref}") if ref else self._page().locator("body")
+            normalized_ref = self._normalize_ref(ref)
+            locator = (
+                self._page().locator(f"aria-ref={normalized_ref}")
+                if normalized_ref
+                else self._page().locator("body")
+            )
             text = locator.inner_text(timeout=5000)
             return self._ok(
                 "extracted text",
-                {"ref": ref, "text": self._truncate(text, 12000), "chars": len(text)},
+                {"ref": normalized_ref, "text": self._truncate(text, 12000), "chars": len(text)},
             )
         except Exception as exc:
             return self._err("extract_text failed", exc)
@@ -212,3 +217,11 @@ class Browser:
             return value
         return value[:limit] + "\n...[truncated]"
 
+    @staticmethod
+    def _normalize_ref(ref: str | None) -> str | None:
+        if ref is None:
+            return None
+        value = str(ref).strip()
+        if value == "" or value.lower() in {"none", "null"}:
+            return None
+        return value

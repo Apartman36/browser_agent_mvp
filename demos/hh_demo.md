@@ -6,6 +6,12 @@
 python run.py --start-url https://hh.ru --login-wait "Найди 2 вакансии AI engineer в Москве на hh.ru, изучи описание, выпиши название, компанию, зарплату если есть и 3 главных требования. Для каждой подготовь короткое сопроводительное письмо на русском. Перед отправкой отклика обязательно спроси подтверждение."
 ```
 
+## Before recording
+
+- Start with a short dry run to confirm Chromium, refs, and UTF-8 output are healthy.
+- Keep 2-3 fallback models in `.env` via `MODEL_FALLBACKS`.
+- If a free model returns 429/502, rerun or switch `MODEL` in `.env`.
+
 ## Expected video flow
 
 1. Start terminal on one side and visible Chromium on the other.
@@ -42,4 +48,3 @@ Complete login yourself. The agent must not ask for passwords, print secrets, so
 - Draft Russian cover letter for each result.
 - Whether any apply/send action was requested.
 - Confirmation that no application was submitted without explicit user approval.
-
