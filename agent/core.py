@@ -39,7 +39,7 @@ def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClien
                 f"[dim]Refs:[/dim] {ref_count}"
             )
 
-            action = llm.plan(memory.to_prompt_payload())
+            action = llm.plan(memory.to_prompt_payload(), memory.get_current_screenshot())
             console.print(f"[bold green]Assistant:[/bold green] {escape(str(action.get('thought', '')))}")
             console.print(f"[bold blue]Using tool:[/bold blue] {escape(str(action.get('tool', '')))}")
             console.print(f"[dim]Input:[/dim] {escape(compact_json(action.get('args', {})))}")

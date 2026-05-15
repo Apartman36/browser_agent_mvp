@@ -86,7 +86,7 @@ class LLMClient:
                 },
             )
 
-    def plan(self, prompt_payload: dict[str, Any]) -> dict[str, Any]:
+    def plan(self, prompt_payload: dict[str, Any], screenshot_base64: str | None = None) -> dict[str, Any]:
         if not self.client:
             return self._missing_key_action()
 
@@ -95,9 +95,16 @@ class LLMClient:
             f"{json.dumps(prompt_payload, ensure_ascii=False)}\n\n"
             "Choose the single next action. Return JSON only."
         )
+        user_message: list[dict[str, Any]] | str = user_prompt
+        if screenshot_base64:
+            user_message = [
+                {"type": "text", "text": user_prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{screenshot_base64}"}}
+            ]
+
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
+            {"role": "user", "content": user_message},
         ]
 
         models = self._candidate_models(self.model)
@@ -126,9 +133,19 @@ class LLMClient:
             "body_text_excerpt": observation.get("body_text", "")[:6000],
             "question": question,
         }
+        user_content = json.dumps(payload, ensure_ascii=False)
+        user_message: list[dict[str, Any]] | str = user_content
+
+        screenshot_base64 = observation.get("screenshot_base64")
+        if screenshot_base64:
+            user_message = [
+                {"type": "text", "text": user_content},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{screenshot_base64}"}}
+            ]
+
         messages = [
             {"role": "system", "content": SUBAGENT_PROMPT},
-            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            {"role": "user", "content": user_message},
         ]
 
         models = self._candidate_models(self.verifier_model)

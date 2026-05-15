@@ -90,6 +90,7 @@ You receive:
 - page title;
 - Playwright ARIA snapshot;
 - visible body text excerpt;
+- a screenshot of the current page;
 - a question from the browser agent.
 
 Answer the question compactly and practically.
