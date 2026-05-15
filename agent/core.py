@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 
 from agent.llm import LLMClient
@@ -23,7 +24,7 @@ def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClien
     memory = Memory(goal)
     tools = ToolDispatcher(browser=browser, llm_client=llm, console=console)
 
-    console.print(Panel.fit(goal, title="User task", border_style="cyan"))
+    console.print(Panel.fit(escape(goal), title="User task", border_style="cyan"))
 
     try:
         for step in range(1, max_steps + 1):
@@ -33,21 +34,21 @@ def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClien
             ref_count = obs.get("snapshot_yaml", "").count("[ref=")
             console.print(
                 f"\n[bold]Step {step}/{max_steps}[/bold] "
-                f"[dim]URL:[/dim] {obs.get('url', '')} "
-                f"[dim]Title:[/dim] {obs.get('title', '')} "
+                f"[dim]URL:[/dim] {escape(obs.get('url', ''))} "
+                f"[dim]Title:[/dim] {escape(obs.get('title', ''))} "
                 f"[dim]Refs:[/dim] {ref_count}"
             )
 
             action = llm.plan(memory.to_prompt_payload())
-            console.print(f"[bold green]Assistant:[/bold green] {action.get('thought', '')}")
-            console.print(f"[bold blue]Using tool:[/bold blue] {action.get('tool')}")
-            console.print(f"[dim]Input:[/dim] {compact_json(action.get('args', {}))}")
+            console.print(f"[bold green]Assistant:[/bold green] {escape(str(action.get('thought', '')))}")
+            console.print(f"[bold blue]Using tool:[/bold blue] {escape(str(action.get('tool', '')))}")
+            console.print(f"[dim]Input:[/dim] {escape(compact_json(action.get('args', {})))}")
 
             result = _execute_with_safety(action, obs, tools, console)
 
             console.print(
                 f"[bold]Result:[/bold] {'OK' if result.get('ok') else 'ERROR'} - "
-                f"{result.get('message', '')}"
+                f"{escape(str(result.get('message', '')))}"
             )
             memory.merge_facts(action.get("new_facts", {}))
             memory.add_action(action, result)
@@ -61,7 +62,7 @@ def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClien
                 if decision == "stop":
                     summary = "Stopped by user after the LLM provider returned an error or rate limit."
                     report_path = write_final_report(goal, "stopped_by_user", summary)
-                    console.print(Panel(summary, title="Final report: stopped_by_user", border_style="yellow"))
+                    console.print(Panel(escape(summary), title="Final report: stopped_by_user", border_style="yellow"))
                     console.print(f"[dim]Saved final report:[/dim] {report_path}")
                     return {
                         "ok": False,
@@ -76,13 +77,13 @@ def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClien
                 status = str(action.get("args", {}).get("status", result.get("data", {}).get("status", "success")))
                 summary = str(action.get("args", {}).get("summary", result.get("data", {}).get("summary", "")))
                 report_path = write_final_report(goal, status, summary)
-                console.print(Panel(summary, title=f"Final report: {status}", border_style="green"))
+                console.print(Panel(escape(summary), title=escape(f"Final report: {status}"), border_style="green"))
                 console.print(f"[dim]Saved final report:[/dim] {report_path}")
                 return {"ok": status == "success", "status": status, "summary": summary, "report_path": str(report_path)}
 
         summary = f"Stopped after reaching max_steps={max_steps} before the task was completed."
         report_path = write_final_report(goal, "failed", summary)
-        console.print(Panel(summary, title="Final report: failed", border_style="red"))
+        console.print(Panel(escape(summary), title="Final report: failed", border_style="red"))
         return {"ok": False, "status": "failed", "summary": summary, "report_path": str(report_path)}
 
     except KeyboardInterrupt:
@@ -103,7 +104,7 @@ def _execute_with_safety(
 
     high_risk, reason = is_high_risk(action, obs)
     if high_risk:
-        console.print(f"[bold yellow]High-risk action detected:[/bold yellow] {reason}")
+        console.print(f"[bold yellow]High-risk action detected:[/bold yellow] {escape(str(reason))}")
         answer = input("Execute? [y/N]\n> ")
         if not user_confirmed(answer):
             return {
