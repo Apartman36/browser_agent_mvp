@@ -3,13 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import json
-import os
 import re
 import time
-from pathlib import Path
 from typing import Any, Literal
 
-from dotenv import load_dotenv
 from openai import (
     APIConnectionError,
     APIStatusError,
@@ -20,8 +17,9 @@ from openai import (
 )
 from pydantic import BaseModel, Field, ValidationError
 
+from agent.config import DEFAULT_MODEL, load_config
 from agent.prompts import SUBAGENT_PROMPT, SYSTEM_PROMPT
-from agent.tools import TOOL_DESCRIPTIONS
+from agent.tool_registry import TOOL_REGISTRY
 
 
 ToolName = Literal[
@@ -39,7 +37,6 @@ ToolName = Literal[
     "done",
 ]
 
-DEFAULT_MODEL = "google/gemma-4-31b-it:free"
 PROVIDER_ERROR_TYPES = (
     RateLimitError,
     InternalServerError,
@@ -69,12 +66,15 @@ class ProviderUnavailableError(Exception):
 
 class LLMClient:
     def __init__(self) -> None:
-        load_dotenv(dotenv_path=Path.cwd() / ".env")
-        self.api_key = os.getenv("OPENROUTER_API_KEY", "")
-        self.model = os.getenv("MODEL", DEFAULT_MODEL) or DEFAULT_MODEL
-        self.model_fallbacks = self._parse_model_fallbacks(os.getenv("MODEL_FALLBACKS", ""))
-        self.verifier_model = os.getenv("MODEL_VERIFIER", self.model) or self.model
+        self.config = load_config()
+        self.api_key = self.config.openrouter_api_key
+        self.model = self.config.model or DEFAULT_MODEL
+        self.model_fallbacks = list(self.config.model_fallbacks)
+        if self.config.paid_fallback_model and self.config.paid_fallback_model not in self.model_fallbacks:
+            self.model_fallbacks.append(self.config.paid_fallback_model)
+        self.verifier_model = self.config.verifier_model or self.model
         self._sleep = time.sleep
+        self.provider_unavailable_error_type = ProviderUnavailableError
         self.client = None
         if self.api_key:
             self.client = OpenAI(
@@ -87,27 +87,9 @@ class LLMClient:
             )
 
     def plan(self, prompt_payload: dict[str, Any]) -> dict[str, Any]:
-        if not self.client:
-            return self._missing_key_action()
+        from agent.planners.json_mode import JsonModePlanner
 
-        user_prompt = (
-            "Current compact memory and page observation JSON:\n"
-            f"{json.dumps(prompt_payload, ensure_ascii=False)}\n\n"
-            "Choose the single next action. Return JSON only."
-        )
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ]
-
-        models = self._candidate_models(self.model)
-        for index, model in enumerate(models):
-            try:
-                return self._plan_with_model(model, messages)
-            except ProviderUnavailableError:
-                self._print_fallback_message(models, index)
-
-        return self._provider_unavailable_action()
+        return JsonModePlanner(llm_client=self, registry=TOOL_REGISTRY).plan(prompt_payload).to_action_dict()
 
     def query_page(self, observation: dict[str, Any], question: str) -> dict[str, Any]:
         if not self.client:
@@ -273,8 +255,9 @@ class LLMClient:
     def _parse_action(content: str) -> PlannerAction:
         text = strip_json_fences(content)
         data = json.loads(text)
-        if data.get("tool") not in TOOL_DESCRIPTIONS:
-            raise ValueError(f"Unknown tool: {data.get('tool')}")
+        tool_name = str(data.get("tool", ""))
+        TOOL_REGISTRY.get(tool_name)
+        data["args"] = TOOL_REGISTRY.validate_args(tool_name, data.get("args") or {}).model_dump()
         return PlannerAction.model_validate(data)
 
     @staticmethod

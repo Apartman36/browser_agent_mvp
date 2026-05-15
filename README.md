@@ -26,9 +26,12 @@ Edit `.env` and set `OPENROUTER_API_KEY`.
 Recommended model settings:
 
 ```env
+PLANNER_MODE=auto
 MODEL=google/gemma-4-31b-it:free
 MODEL_FALLBACKS=google/gemma-4-26b-a4b-it:free,z-ai/glm-4.5-air:free,inclusionai/ring-2.6-1t:free
+PAID_FALLBACK_MODEL=openai/gpt-5.4-mini
 MODEL_VERIFIER=google/gemma-4-31b-it:free
+USE_LLM_RISK_CLASSIFIER=false
 ```
 
 Free OpenRouter providers can rate-limit or fail upstream, so the client retries provider
@@ -62,12 +65,25 @@ python run.py --start-url https://hh.ru --login-wait "Найди 2 ваканс�
 `observe -> decide -> safety gate -> act -> memory/logs -> repeat`
 
 1. Playwright observes the page with `page.locator("body").aria_snapshot(mode="ai")`.
-2. The planner LLM returns exactly one JSON action.
-3. The safety gate blocks irreversible actions until the user confirms.
-4. Browser tools execute through current ARIA refs such as `aria-ref=e7`.
-5. A `query_page` sub-agent answers focused questions about the current page (titles, ref tables, salaries) without bloating the main loop.
-6. Memory stores compact facts and only the last 8 action results.
-7. Logs and final report are written under `logs/` as UTF-8 (JSONL with `ensure_ascii=False`).
+2. The planner chooses exactly one next tool action, using native tool/function calling when `PLANNER_MODE=auto` or `native_tools`.
+3. The `ToolRegistry` validates tool arguments from Pydantic schemas before dispatch.
+4. `SafetyEngine` classifies the action by category and risk, then blocks or asks for confirmation when needed.
+5. Browser tools execute through current ARIA refs such as `aria-ref=e7`.
+6. A `query_page` sub-agent answers focused questions about the current page (titles, ref tables, salaries) without bloating the main loop.
+7. Memory stores compact facts and only the last 8 action results.
+8. Logs, safety audit records, and the final report are written under `logs/` as UTF-8.
+
+## LLM interface
+
+The primary planner path uses OpenAI-compatible Chat Completions tool/function
+calling through OpenRouter. `NativeToolPlanner` sends `tools=ToolRegistry.openai_tools()`,
+uses `tool_choice="auto"`, and requests one tool call per step with
+`parallel_tool_calls=False` when supported.
+
+`PLANNER_MODE=json` forces the compatibility planner. `PLANNER_MODE=auto` prefers
+native tool calls and keeps JSON mode as a fallback for models/providers that do
+not reliably support native tool calls. Both planner paths use the same registry
+for tool descriptions and argument validation.
 
 ## Why this is not hardcoded
 
@@ -117,19 +133,27 @@ Select-String -Path .\agent\*.py -Pattern "browser_use|skyvern|stagehand|seleniu
 
 ## Advanced patterns
 
-- Structured JSON action schema with validation and retry on invalid JSON.
-- Human-in-the-loop safety gate for submit/send/apply/delete/pay/buy actions.
+- Native tool/function calling with a validated JSON-mode fallback.
+- Tool registry as the single source of truth for schemas, prompt docs, categories, and risk metadata.
+- Structured `SafetyEngine` with human confirmation for high-risk actions.
 - Page analyst sub-agent through `query_page`.
 - Compact memory and context management with bounded history.
 
 ## Research / inspiration
 
-- Playwright MCP uses snapshot/ref-style interaction.
+Implemented here: direct Playwright automation plus a local Python tool dispatcher.
+This project does not currently implement an MCP server and does not depend on
+Playwright MCP.
+
+- Playwright MCP inspired snapshot/ref-style interaction.
 - browser-use inspired indexed and serialized page representation.
 - Stagehand inspired the act/observe/extract mental model.
 - Skyvern inspired safety notes and production workflow thinking.
 
 No code was copied from those projects.
+
+MCP server support is planned as a separate optional integration and is not part
+of this pass.
 
 ## Demo scenario
 
@@ -144,10 +168,13 @@ hh.ru flow:
 
 ## Safety
 
-- No CAPTCHA solving.
-- No password extraction.
-- No automatic submit/payment/delete/apply without confirmation.
-- No API keys, cookies, tokens, or secrets are printed.
+- Every planned tool call passes through `ToolRegistry` validation and `SafetyEngine`.
+- Actions are classified by category and risk before dispatch.
+- Regex/keyword checks are heuristic signals inside the policy, not the whole safety layer.
+- High-risk submit/send/apply/delete/pay/buy actions require human confirmation.
+- Prompt-injection-looking page text escalates mutating actions.
+- Safety decisions are written to `logs/safety_audit.jsonl` with sensitive typed values redacted.
+- No CAPTCHA solving, password extraction, or automatic irreversible actions.
 
 ## Known limitations
 
@@ -155,7 +182,9 @@ hh.ru flow:
 - No vision fallback.
 - No CAPTCHA solving.
 - ARIA snapshot quality depends on website accessibility.
-- Free OpenRouter models may rate-limit or produce weaker JSON; retries and fallback
+- MCP server compatibility is future work; the current runtime is not an MCP
+  server or MCP client.
+- Free OpenRouter models may rate-limit or produce weaker native/JSON actions; retries and fallback
   models are implemented for demo robustness.
 - LM Studio/Ollama local provider wiring is future work.
 
@@ -164,7 +193,7 @@ hh.ru flow:
 Run tests:
 
 ```powershell
-pytest -q
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
 Optional OpenRouter smoke test:
