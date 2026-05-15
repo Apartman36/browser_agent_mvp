@@ -3,6 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import socket
+import urllib.parse
+import ipaddress
 
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
@@ -82,9 +85,29 @@ class Browser:
 
     def goto(self, url: str) -> dict[str, Any]:
         try:
+            parsed = urllib.parse.urlparse(url)
+            if parsed.scheme not in ("http", "https"):
+                raise ValueError("scheme must be http or https")
+
+            hostname = parsed.hostname
+            if not hostname:
+                raise ValueError("missing hostname")
+
+            try:
+                ip = socket.gethostbyname(hostname)
+            except Exception as e:
+                # Normal DNS resolution failure
+                raise RuntimeError(f"hostname resolution failed: {e}")
+
+            ip_obj = ipaddress.ip_address(ip)
+            if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified or ip_obj.is_reserved:
+                raise ValueError("resolved to an internal/private IP")
+
             self._page().goto(url, wait_until="domcontentloaded", timeout=15000)
             self._settle()
             return self._ok("successfully navigated", {"url": self._page().url})
+        except ValueError as exc:
+            return self._err("navigation failed: blocked by security policy", exc)
         except Exception as exc:
             return self._err("navigation failed", exc)
 
