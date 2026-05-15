@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from rich.console import Console
+from rich.markup import escape
 
 
 def compact_json(value: Any) -> str:
@@ -140,17 +141,18 @@ class ToolDispatcher:
 
     def query_page(self, question: str) -> dict[str, Any]:
         self.console.print("[bold cyan]DOM Sub-agent:[/bold cyan] Processing query...")
-        self.console.print(f"[dim]Question:[/dim] {question}")
+        self.console.print(f"[dim]Question:[/dim] {escape(question)}")
         if not self.current_obs:
             return {"ok": False, "message": "no current observation available", "data": {}}
         answer = self.llm_client.query_page(self.current_obs, question)
         if answer.get("ok"):
-            self.console.print(f"[dim]Answer:[/dim] {answer['data'].get('answer', '')}")
+            self.console.print(f"[dim]Answer:[/dim] {escape(str(answer['data'].get('answer', '')))}")
         return answer
 
-    @staticmethod
-    def ask_user(question: str) -> dict[str, Any]:
-        answer = input(f"{question}\n> ")
+    def ask_user(self, question: str) -> dict[str, Any]:
+        # input() doesn't support rich markup, but we print it via console first to be safe and consistent
+        self.console.print(f"[bold]Question:[/bold] {escape(question)}")
+        answer = input("> ")
         return {"ok": True, "message": "user answered", "data": {"answer": answer}}
 
 
