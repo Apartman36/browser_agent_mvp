@@ -3,12 +3,21 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from agent.tools import compact_json
 
 
 DANGEROUS_RE = re.compile(
     r"(?i)(apply|pay|send|confirm|delete|remove|buy|checkout|submit application|отправ|отклик|подтверд|удал|оплат|купить|заказ)"
 )
+
+
+def _action_contains_dangerous_text(obj: Any) -> bool:
+    if isinstance(obj, str):
+        return bool(DANGEROUS_RE.search(obj))
+    elif isinstance(obj, dict):
+        return any(_action_contains_dangerous_text(k) or _action_contains_dangerous_text(v) for k, v in obj.items())
+    elif isinstance(obj, list):
+        return any(_action_contains_dangerous_text(item) for item in obj)
+    return False
 
 
 def is_high_risk(action: dict[str, Any], current_obs: dict[str, Any]) -> tuple[bool, str]:
@@ -31,8 +40,7 @@ def is_high_risk(action: dict[str, Any], current_obs: dict[str, Any]) -> tuple[b
             return True, "typing text and pressing Enter may submit a high-risk form"
 
     if tool == "press_key" and str(args.get("key", "")).lower() == "enter":
-        action_text = compact_json(action)
-        if DANGEROUS_RE.search(action_text):
+        if _action_contains_dangerous_text(action):
             return True, "pressing Enter appears related to a high-risk action"
 
     return False, ""
