@@ -20,6 +20,14 @@ python -m playwright install chromium
 copy .env.example .env
 ```
 
+## Browser/runtime requirements
+
+- The primary runtime opens a visible Playwright Chromium window, not a headless-only browser.
+- Browser state is persisted in `.pw_profile` through Playwright `launch_persistent_context`.
+- A user can log in manually in that visible browser session, then let the agent continue in the same session.
+- The agent observes pages with Playwright ARIA snapshots and acts only through current `aria-ref` values from the latest observation.
+- Re-observe after navigation or mutation; refs are ephemeral and can become stale when the page changes.
+
 Edit `.env`, set `OPENROUTER_API_KEY`, and replace the model placeholders with
 OpenRouter model IDs you have verified for your account.
 
@@ -92,6 +100,54 @@ not reliably support native tool calls. JSON mode remains a structured JSON
 fallback and does not use provider `role: "tool"` messages. Both planner paths
 use the same registry for tool descriptions and argument validation.
 
+## Optional MCP server
+
+This repository includes an optional MCP server that exposes a subset of the generic browser tools over the Model Context Protocol via stdio. The main CLI agent remains the primary demo runtime and is not itself an MCP client.
+
+Current scope:
+
+- server-side MCP support only;
+- stdio transport only;
+- generic browser tools only, with no site-specific workflows;
+- one visible Playwright/Chromium session per MCP server process;
+- one active page/tab at a time;
+- browser startup is lazy on the first tool call;
+- mutating MCP actions still pass through `SafetyEngine`;
+- high-risk or confirmation-required MCP actions return a structured blocked result instead of executing silently.
+
+Run the server:
+
+```powershell
+python -m agent.mcp_server
+```
+
+Test with MCP Inspector:
+
+```powershell
+npx -y @modelcontextprotocol/inspector python -m agent.mcp_server
+```
+
+Exposed MCP tools:
+
+- `browser_observe`
+- `browser_goto`
+- `browser_click_element`
+- `browser_type_text`
+- `browser_extract_text`
+- `browser_screenshot`
+- `browser_scroll`
+- `browser_wait`
+
+Intentionally not exposed through MCP:
+
+- `ask_user`
+- `done`
+- `query_page`
+- arbitrary code execution
+- site-specific flows
+
+The MCP layer is a thin adapter over the existing browser/session/tool/safety code. It does not replace `NativeToolPlanner`, JSON fallback mode, the CLI HITL flow, or the Playwright ARIA-ref approach.
+
 ## Why this is not hardcoded
 
 - No site-specific selectors.
@@ -145,12 +201,13 @@ Select-String -Path .\agent\*.py -Pattern "browser_use|skyvern|stagehand|seleniu
 - Structured `SafetyEngine` with human confirmation for high-risk actions.
 - Page analyst sub-agent through `query_page`.
 - Compact memory and context management with bounded history.
+- Optional MCP server support as a thin server-side adapter over the generic browser tool layer.
 
 ## Research / inspiration
 
 Implemented here: direct Playwright automation plus a local Python tool dispatcher.
-This project does not currently implement an MCP server and does not depend on
-Playwright MCP.
+Optional MCP server support is included as a thin adapter over the existing
+browser tool layer. The project does not depend on Playwright MCP.
 
 - Playwright MCP inspired snapshot/ref-style interaction.
 - browser-use inspired indexed and serialized page representation.
@@ -158,9 +215,6 @@ Playwright MCP.
 - Skyvern inspired safety notes and production workflow thinking.
 
 No code was copied from those projects.
-
-MCP server support is planned as a separate optional integration and is not part
-of this pass.
 
 ## Demo scenario
 
@@ -189,8 +243,11 @@ hh.ru flow:
 - No vision fallback.
 - No CAPTCHA solving.
 - ARIA snapshot quality depends on website accessibility.
-- MCP server compatibility is future work; the current runtime is not an MCP
-  server or MCP client.
+- MCP server support is minimal and stdio-only.
+- The MCP server has one active session/page per process and does not implement multi-session routing.
+- The CLI agent is not an MCP client.
+- MCP resources/prompts and HTTP transport are not implemented.
+- High-risk MCP actions return confirmation-required results instead of using the CLI approval prompt.
 - Free OpenRouter models may rate-limit or produce weaker native/JSON actions; retries and fallback
   models are implemented for demo robustness.
 - LM Studio/Ollama local provider wiring is future work.
@@ -213,4 +270,16 @@ Dry run without an LLM call:
 
 ```powershell
 python run.py --start-url https://www.google.com --dry-run "Observe the page."
+```
+
+Run the optional MCP server:
+
+```powershell
+python -m agent.mcp_server
+```
+
+Inspect the MCP server over stdio:
+
+```powershell
+npx -y @modelcontextprotocol/inspector python -m agent.mcp_server
 ```
