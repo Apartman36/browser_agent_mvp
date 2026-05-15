@@ -38,6 +38,12 @@ class Memory:
         for key, value in new_facts.items():
             self.facts[str(key)] = self._truncate(str(value), 1000)
 
+
+    def get_current_screenshot(self) -> str | None:
+        if not self.current_obs:
+            return None
+        return self.current_obs.get("screenshot_base64")
+
     def to_prompt_payload(self) -> dict[str, Any]:
         obs = self.current_obs or {}
         return {

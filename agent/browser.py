@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import base64
 import socket
 import urllib.parse
 import ipaddress
@@ -59,6 +60,7 @@ class Browser:
         page = self._page()
         snapshot = ""
         body_text = ""
+        screenshot_base64 = None
         error = None
 
         try:
@@ -74,12 +76,20 @@ class Browser:
             else:
                 error = f"Body text failed: {exc}"
 
+        try:
+            # Capture a low-res JPEG screenshot for vision models
+            screenshot_bytes = page.screenshot(type="jpeg", quality=40, scale="css", timeout=5000)
+            screenshot_base64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+        except Exception:
+            pass # Non-fatal if screenshot fails
+
         return {
             "ok": error is None,
             "url": page.url,
             "title": self._safe_title(),
             "snapshot_yaml": self._truncate(snapshot, 20000),
             "body_text": self._truncate(body_text, 8000),
+            "screenshot_base64": screenshot_base64,
             "error": error,
         }
 
