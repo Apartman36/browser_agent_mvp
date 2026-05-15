@@ -308,8 +308,15 @@ class LLMClient:
 def strip_json_fences(content: str) -> str:
     text = content.strip()
     if text.startswith("```"):
-        text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text)
-        text = re.sub(r"\s*```$", "", text).strip()
+        text = text[3:]
+        i = 0
+        while i < len(text) and (text[i].isalnum() or text[i] in "_-"):
+            i += 1
+        text = text[i:].lstrip()
+        if text.endswith("```"):
+            text = text[:-3].rstrip()
+        text = text.strip()
+
     if not text.startswith("{"):
         start = text.find("{")
         end = text.rfind("}")
