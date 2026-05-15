@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
+
+from agent.tools import compact_json
 
 
 DANGEROUS_RE = re.compile(
@@ -30,7 +31,7 @@ def is_high_risk(action: dict[str, Any], current_obs: dict[str, Any]) -> tuple[b
             return True, "typing text and pressing Enter may submit a high-risk form"
 
     if tool == "press_key" and str(args.get("key", "")).lower() == "enter":
-        action_text = json.dumps(action, ensure_ascii=False)
+        action_text = compact_json(action)
         if DANGEROUS_RE.search(action_text):
             return True, "pressing Enter appears related to a high-risk action"
 
