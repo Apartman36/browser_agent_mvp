@@ -7,10 +7,14 @@ from typing import Any
 
 
 LOG_DIR = Path("logs")
+_LOGS_DIR_ENSURED = False
 
 
 def ensure_logs_dir() -> Path:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    global _LOGS_DIR_ENSURED
+    if not _LOGS_DIR_ENSURED:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        _LOGS_DIR_ENSURED = True
     return LOG_DIR
 
 
@@ -62,4 +66,3 @@ def read_action_log() -> list[dict[str, Any]]:
                 continue
             records.append(json.loads(line))
     return records
-
