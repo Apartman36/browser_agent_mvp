@@ -5,10 +5,8 @@ from email.utils import parsedate_to_datetime
 import json
 import os
 import time
-from pathlib import Path
 from typing import Any, Literal
 
-from dotenv import load_dotenv
 from openai import (
     APIConnectionError,
     APIStatusError,
@@ -67,7 +65,6 @@ class ProviderUnavailableError(Exception):
 
 class LLMClient:
     def __init__(self) -> None:
-        load_dotenv(dotenv_path=Path.cwd() / ".env")
         self.api_key = os.getenv("OPENROUTER_API_KEY", "")
         self.model = os.getenv("MODEL", DEFAULT_MODEL) or DEFAULT_MODEL
         self.model_fallbacks = self._parse_model_fallbacks(
