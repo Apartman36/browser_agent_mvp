@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import json
 import os
-import re
 import time
 from pathlib import Path
 from typing import Any, Literal
@@ -22,7 +21,6 @@ from pydantic import BaseModel, Field, ValidationError
 
 from agent.prompts import SUBAGENT_PROMPT, SYSTEM_PROMPT
 from agent.tools import TOOL_DESCRIPTIONS
-
 
 ToolName = Literal[
     "goto",
@@ -72,7 +70,9 @@ class LLMClient:
         load_dotenv(dotenv_path=Path.cwd() / ".env")
         self.api_key = os.getenv("OPENROUTER_API_KEY", "")
         self.model = os.getenv("MODEL", DEFAULT_MODEL) or DEFAULT_MODEL
-        self.model_fallbacks = self._parse_model_fallbacks(os.getenv("MODEL_FALLBACKS", ""))
+        self.model_fallbacks = self._parse_model_fallbacks(
+            os.getenv("MODEL_FALLBACKS", "")
+        )
         self.verifier_model = os.getenv("MODEL_VERIFIER", self.model) or self.model
         self._sleep = time.sleep
         self.client = None
@@ -114,7 +114,9 @@ class LLMClient:
             return {
                 "ok": False,
                 "message": "OpenRouter API key is not configured.",
-                "data": {"answer": "Set OPENROUTER_API_KEY in .env to enable query_page."},
+                "data": {
+                    "answer": "Set OPENROUTER_API_KEY in .env to enable query_page."
+                },
             }
 
         payload = {
@@ -138,7 +140,11 @@ class LLMClient:
                     temperature=0.2,
                 )
                 answer = response.choices[0].message.content or ""
-                return {"ok": True, "message": "page query answered", "data": {"answer": answer.strip()}}
+                return {
+                    "ok": True,
+                    "message": "page query answered",
+                    "data": {"answer": answer.strip()},
+                }
             except ProviderUnavailableError:
                 self._print_fallback_message(models, index)
 
@@ -153,7 +159,9 @@ class LLMClient:
             },
         }
 
-    def _plan_with_model(self, model: str, messages: list[dict[str, str]]) -> dict[str, Any]:
+    def _plan_with_model(
+        self, model: str, messages: list[dict[str, str]]
+    ) -> dict[str, Any]:
         model_messages = [dict(message) for message in messages]
         last_error = ""
         for _ in range(3):
@@ -183,7 +191,9 @@ class LLMClient:
         return {
             "thought": "The model returned invalid JSON and the agent cannot safely continue.",
             "tool": "ask_user",
-            "args": {"question": "The LLM returned invalid JSON twice. What should I do next?"},
+            "args": {
+                "question": "The LLM returned invalid JSON twice. What should I do next?"
+            },
             "risk": "medium",
             "needs_user_confirmation": True,
             "new_facts": {"last_parser_error": last_error},
@@ -208,20 +218,26 @@ class LLMClient:
                 self._sleep(delay)
 
         assert last_error is not None
-        print(f"LLM provider failed for {model}: {self._format_provider_error(last_error)}")
+        print(
+            f"LLM provider failed for {model}: {self._format_provider_error(last_error)}"
+        )
         raise ProviderUnavailableError(model, last_error)
 
     def _candidate_models(self, primary_model: str) -> list[str]:
         models: list[str] = []
+        seen: set[str] = set()
         for model in [primary_model, *self.model_fallbacks]:
             model = model.strip()
-            if model and model not in models:
+            if model and model not in seen:
                 models.append(model)
+                seen.add(model)
         return models
 
     def _print_fallback_message(self, models: list[str], index: int) -> None:
         if index + 1 < len(models):
-            print(f"LLM provider failed for {models[index]}, trying fallback {models[index + 1]}...")
+            print(
+                f"LLM provider failed for {models[index]}, trying fallback {models[index + 1]}..."
+            )
 
     @staticmethod
     def _parse_model_fallbacks(raw_value: str) -> list[str]:
@@ -261,7 +277,9 @@ class LLMClient:
     @staticmethod
     def _format_provider_error(exc: Exception) -> str:
         response = getattr(exc, "response", None)
-        status_code = getattr(exc, "status_code", None) or getattr(response, "status_code", None)
+        status_code = getattr(exc, "status_code", None) or getattr(
+            response, "status_code", None
+        )
         message = " ".join(str(exc).split())
         if len(message) > 220:
             message = message[:217] + "..."
@@ -282,7 +300,9 @@ class LLMClient:
         return {
             "thought": "OpenRouter is not configured, so I need the user to add an API key before planning.",
             "tool": "ask_user",
-            "args": {"question": "OPENROUTER_API_KEY is missing in .env. Add it, then rerun the agent."},
+            "args": {
+                "question": "OPENROUTER_API_KEY is missing in .env. Add it, then rerun the agent."
+            },
             "risk": "medium",
             "needs_user_confirmation": False,
             "new_facts": {},
