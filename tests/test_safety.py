@@ -1,4 +1,7 @@
-from agent.safety import is_high_risk
+import pytest
+
+
+from agent.safety import is_high_risk, user_confirmed
 
 
 def test_search_textbox_submit_is_not_high_risk() -> None:
@@ -57,3 +60,24 @@ def test_press_enter_with_dangerous_context_is_high_risk() -> None:
     risky, reason = is_high_risk(action, obs)
     assert risky is True
     assert "pressing Enter" in reason
+
+
+@pytest.mark.parametrize("answer", [
+    "y", "yes", "д", "да",
+    "Y", "YES", "Д", "ДА", "Да",
+    "  yes  ", " \n y \t ",
+    "yep", "yeah", "yellow", "давай",
+])
+def test_user_confirmed_true(answer: str) -> None:
+    assert user_confirmed(answer) is True
+
+
+@pytest.mark.parametrize("answer", [
+    "n", "no", "нет",
+    "N", "NO", "НЕТ", "Нет",
+    "nope", "nah", "random", "hello",
+    "", "   ", " \n \t ",
+    "123", "noyes"
+])
+def test_user_confirmed_false(answer: str) -> None:
+    assert user_confirmed(answer) is False
