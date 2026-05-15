@@ -28,8 +28,8 @@ copy .env.example .env
 - The agent observes pages with Playwright ARIA snapshots and acts only through current `aria-ref` values from the latest observation.
 - Re-observe after navigation or mutation; refs are ephemeral and can become stale when the page changes.
 
-Edit `.env`, set `OPENROUTER_API_KEY`, and replace the model placeholders with
-OpenRouter model IDs you have verified for your account.
+Copy `.env.example` to `.env`, set `OPENROUTER_API_KEY`, then replace the model
+placeholders with OpenRouter model IDs verified for your account.
 
 Model configuration shape:
 

@@ -22,7 +22,7 @@ class FakeLLM:
         self.model = "primary"
 
     def _candidate_models(self, primary_model: str) -> list[str]:
-        return [primary_model]
+        return [primary_model] if primary_model else []
 
     def _chat_completion_with_retries(self, model: str, **kwargs: object) -> object:
         self.calls.append(kwargs)
@@ -37,6 +37,17 @@ class FakeLLM:
             "thought": "missing key",
             "tool": "ask_user",
             "args": {"question": "missing key"},
+            "risk": "medium",
+            "needs_user_confirmation": False,
+            "new_facts": {},
+        }
+
+    @staticmethod
+    def _missing_model_action() -> dict[str, object]:
+        return {
+            "thought": "missing model",
+            "tool": "ask_user",
+            "args": {"question": "missing model"},
             "risk": "medium",
             "needs_user_confirmation": False,
             "new_facts": {},
@@ -92,6 +103,18 @@ def test_json_mode_planner_invalid_json_returns_safe_fallback() -> None:
     assert action.tool == "ask_user"
     assert action.needs_user_confirmation is True
     assert "last_parser_error" in action.new_facts
+
+
+def test_json_mode_planner_missing_model_returns_safe_ask_user() -> None:
+    llm = FakeLLM([])
+    llm.model = ""
+    planner = JsonModePlanner(llm_client=llm, registry=TOOL_REGISTRY)
+
+    action = planner.plan(_payload())
+
+    assert action.tool == "ask_user"
+    assert action.args == {"question": "missing model"}
+    assert llm.calls == []
 
 
 def test_json_mode_planner_append_tool_result_is_noop() -> None:

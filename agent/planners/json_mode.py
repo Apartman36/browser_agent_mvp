@@ -33,6 +33,9 @@ class JsonModePlanner(BasePlanner):
         self.last_messages = [dict(message) for message in messages]
 
         models = self.llm_client._candidate_models(self.llm_client.model)
+        if not models:
+            return PlannerAction.model_validate(self.llm_client._missing_model_action())
+
         for index, model in enumerate(models):
             try:
                 return self._plan_with_model(model, messages)

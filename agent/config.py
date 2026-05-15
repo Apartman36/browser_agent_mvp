@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
-DEFAULT_MODEL = "google/gemma-4-31b-it:free"
+DEFAULT_MODEL = ""
 DEFAULT_PLANNER_MODE = "auto"
 
 
@@ -28,7 +28,7 @@ class AgentConfig:
 def load_config() -> AgentConfig:
     load_dotenv(dotenv_path=Path.cwd() / ".env", override=True)
 
-    model = os.getenv("MODEL", DEFAULT_MODEL) or DEFAULT_MODEL
+    model = (os.getenv("MODEL", DEFAULT_MODEL) or DEFAULT_MODEL).strip()
     planner_mode = (os.getenv("PLANNER_MODE", DEFAULT_PLANNER_MODE) or DEFAULT_PLANNER_MODE).strip().lower()
     if planner_mode not in {"auto", "native_tools", "json"}:
         planner_mode = DEFAULT_PLANNER_MODE
@@ -38,7 +38,7 @@ def load_config() -> AgentConfig:
         model=model,
         model_fallbacks=_parse_csv(os.getenv("MODEL_FALLBACKS", "")),
         paid_fallback_model=os.getenv("PAID_FALLBACK_MODEL", "").strip(),
-        verifier_model=os.getenv("MODEL_VERIFIER", model) or model,
+        verifier_model=(os.getenv("MODEL_VERIFIER", model) or model).strip(),
         planner_mode=planner_mode,
         use_llm_risk_classifier=_parse_bool(os.getenv("USE_LLM_RISK_CLASSIFIER", "false")),
         max_steps=_parse_int(os.getenv("MAX_STEPS", "25"), default=25),

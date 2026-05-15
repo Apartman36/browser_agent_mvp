@@ -5,7 +5,7 @@ from email.utils import parsedate_to_datetime
 import json
 import re
 import time
-from typing import Any, Literal
+from typing import Any
 
 from openai import (
     APIConnectionError,
@@ -15,27 +15,13 @@ from openai import (
     OpenAI,
     RateLimitError,
 )
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 
-from agent.config import DEFAULT_MODEL, load_config
+from agent.config import load_config
+from agent.planners.base import PlannerAction
 from agent.prompts import SUBAGENT_PROMPT, SYSTEM_PROMPT
 from agent.tool_registry import TOOL_REGISTRY
 
-
-ToolName = Literal[
-    "goto",
-    "observe",
-    "query_page",
-    "click_element",
-    "type_text",
-    "press_key",
-    "scroll",
-    "wait",
-    "screenshot",
-    "extract_text",
-    "ask_user",
-    "done",
-]
 
 PROVIDER_ERROR_TYPES = (
     RateLimitError,
@@ -46,15 +32,6 @@ PROVIDER_ERROR_TYPES = (
 )
 RETRY_BACKOFF_SECONDS = (2.0, 5.0)
 MAX_RETRY_AFTER_SECONDS = 10.0
-
-
-class PlannerAction(BaseModel):
-    thought: str
-    tool: ToolName
-    args: dict[str, Any] = Field(default_factory=dict)
-    risk: Literal["low", "medium", "high"] = "low"
-    needs_user_confirmation: bool = False
-    new_facts: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProviderUnavailableError(Exception):
@@ -68,7 +45,7 @@ class LLMClient:
     def __init__(self) -> None:
         self.config = load_config()
         self.api_key = self.config.openrouter_api_key
-        self.model = self.config.model or DEFAULT_MODEL
+        self.model = self.config.model
         self.model_fallbacks = list(self.config.model_fallbacks)
         if self.config.paid_fallback_model and self.config.paid_fallback_model not in self.model_fallbacks:
             self.model_fallbacks.append(self.config.paid_fallback_model)
@@ -112,6 +89,9 @@ class LLMClient:
         ]
 
         models = self._candidate_models(self.verifier_model)
+        if not models:
+            return self._missing_model_result()
+
         for index, model in enumerate(models):
             try:
                 response = self._chat_completion_with_retries(
@@ -148,7 +128,7 @@ class LLMClient:
             content = response.choices[0].message.content or ""
             try:
                 parsed = self._parse_action(content)
-                return parsed.model_dump()
+                return parsed.to_action_dict()
             except (json.JSONDecodeError, ValidationError, ValueError) as exc:
                 last_error = str(exc)
                 model_messages.append({"role": "assistant", "content": content})
@@ -196,7 +176,7 @@ class LLMClient:
     def _candidate_models(self, primary_model: str) -> list[str]:
         models: list[str] = []
         for model in [primary_model, *self.model_fallbacks]:
-            model = model.strip()
+            model = str(model or "").strip()
             if model and model not in models:
                 models.append(model)
         return models
@@ -269,6 +249,35 @@ class LLMClient:
             "risk": "medium",
             "needs_user_confirmation": False,
             "new_facts": {},
+        }
+
+    @staticmethod
+    def _missing_model_action() -> dict[str, Any]:
+        return {
+            "thought": "OpenRouter model configuration is missing, so I need the user to set a verified model ID.",
+            "tool": "ask_user",
+            "args": {
+                "question": (
+                    "MODEL is missing in .env. Set MODEL to an OpenRouter model ID verified for your account, "
+                    "or configure MODEL_FALLBACKS, then rerun the agent."
+                )
+            },
+            "risk": "medium",
+            "needs_user_confirmation": False,
+            "new_facts": {},
+        }
+
+    @staticmethod
+    def _missing_model_result() -> dict[str, Any]:
+        return {
+            "ok": False,
+            "message": "OpenRouter model is not configured.",
+            "data": {
+                "answer": (
+                    "Set MODEL or MODEL_VERIFIER in .env to an OpenRouter model ID verified for your account, "
+                    "or configure MODEL_FALLBACKS."
+                )
+            },
         }
 
     @staticmethod
