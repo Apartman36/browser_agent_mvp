@@ -8,8 +8,7 @@ This is a generic browser agent, not a site-specific bot.
 
 ## Demo
 
-Video: TODO  
-GitHub: TODO
+Demo video and repository links are provided in the submission message.
 
 ## Quick start
 
@@ -21,22 +20,24 @@ python -m playwright install chromium
 copy .env.example .env
 ```
 
-Edit `.env` and set `OPENROUTER_API_KEY`.
+Edit `.env`, set `OPENROUTER_API_KEY`, and replace the model placeholders with
+OpenRouter model IDs you have verified for your account.
 
-Recommended model settings:
+Model configuration shape:
 
 ```env
 PLANNER_MODE=auto
-MODEL=google/gemma-4-31b-it:free
-MODEL_FALLBACKS=google/gemma-4-26b-a4b-it:free,z-ai/glm-4.5-air:free,inclusionai/ring-2.6-1t:free
-PAID_FALLBACK_MODEL=openai/gpt-5.4-mini
-MODEL_VERIFIER=google/gemma-4-31b-it:free
+MODEL=<your-openrouter-model-id>
+MODEL_FALLBACKS=<comma-separated-openrouter-model-ids>
+PAID_FALLBACK_MODEL=<optional-paid-openrouter-model-id>
+MODEL_VERIFIER=<optional-openrouter-model-id>
 USE_LLM_RISK_CLASSIFIER=false
 ```
 
 Free OpenRouter providers can rate-limit or fail upstream, so the client retries provider
 errors and then tries `MODEL_FALLBACKS` in order. To force one model only, set `MODEL`
-and leave `MODEL_FALLBACKS` empty.
+and leave `MODEL_FALLBACKS` empty. The repository tests do not validate specific
+OpenRouter model IDs.
 
 The LLM client is OpenAI-compatible. LM Studio/Ollama support could be added later by
 making `base_url` configurable, but this MVP uses OpenRouter for a reproducible demo.
@@ -80,10 +81,16 @@ calling through OpenRouter. `NativeToolPlanner` sends `tools=ToolRegistry.openai
 uses `tool_choice="auto"`, and requests one tool call per step with
 `parallel_tool_calls=False` when supported.
 
+When a native tool call is selected, the planner keeps the provider transcript
+valid by storing the assistant `tool_calls` message and returning the execution
+result as a `role: "tool"` message keyed by `tool_call_id`. Blocked and
+user-denied actions are also returned to the provider as compact tool results.
+
 `PLANNER_MODE=json` forces the compatibility planner. `PLANNER_MODE=auto` prefers
 native tool calls and keeps JSON mode as a fallback for models/providers that do
-not reliably support native tool calls. Both planner paths use the same registry
-for tool descriptions and argument validation.
+not reliably support native tool calls. JSON mode remains a structured JSON
+fallback and does not use provider `role: "tool"` messages. Both planner paths
+use the same registry for tool descriptions and argument validation.
 
 ## Why this is not hardcoded
 

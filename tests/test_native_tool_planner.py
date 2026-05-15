@@ -89,6 +89,66 @@ def test_native_tool_planner_returns_click_action() -> None:
     assert llm.calls[0]["tools"] == TOOL_REGISTRY.openai_tools()
     assert llm.calls[0]["tool_choice"] == "auto"
     assert llm.calls[0]["parallel_tool_calls"] is False
+    assert planner._native_history[-1]["role"] == "assistant"
+    assert planner._native_history[-1]["tool_calls"][0]["id"] == "call_1"
+
+
+def test_native_tool_planner_appends_tool_result_with_matching_call_id() -> None:
+    llm = FakeLLM([_response(tool_calls=[_tool_call("click_element", '{"ref":"e1"}')])])
+    planner = NativeToolPlanner(llm_client=llm, registry=TOOL_REGISTRY)
+    action = planner.plan(_payload())
+
+    planner.append_tool_result(action, {"ok": True, "message": "clicked element", "data": {"ref": "e1"}})
+
+    tool_message = planner._native_history[-1]
+    assert tool_message["role"] == "tool"
+    assert tool_message["tool_call_id"] == "call_1"
+    assert "clicked element" in tool_message["content"]
+
+
+def test_native_tool_planner_next_request_includes_prior_tool_result() -> None:
+    llm = FakeLLM(
+        [
+            _response(tool_calls=[_tool_call("click_element", '{"ref":"e1"}', call_id="call_1")]),
+            _response(tool_calls=[_tool_call("observe", "{}", call_id="call_2")]),
+        ]
+    )
+    planner = NativeToolPlanner(llm_client=llm, registry=TOOL_REGISTRY)
+    first_action = planner.plan(_payload())
+    planner.append_tool_result(first_action, {"ok": True, "message": "clicked element", "data": {"ref": "e1"}})
+
+    second_action = planner.plan(_payload())
+
+    second_messages = llm.calls[1]["messages"]
+    prior_tool_messages = [message for message in second_messages if message.get("role") == "tool"]
+    assert second_action.native_tool_call_id == "call_2"
+    assert prior_tool_messages
+    assert prior_tool_messages[-1]["tool_call_id"] == "call_1"
+    assert second_messages[-1]["role"] == "user"
+
+
+def test_native_tool_planner_records_blocked_and_denied_tool_results() -> None:
+    llm = FakeLLM(
+        [
+            _response(tool_calls=[_tool_call("click_element", '{"ref":"e1"}', call_id="call_blocked")]),
+            _response(tool_calls=[_tool_call("click_element", '{"ref":"e1"}', call_id="call_denied")]),
+        ]
+    )
+    planner = NativeToolPlanner(llm_client=llm, registry=TOOL_REGISTRY)
+
+    blocked_action = planner.plan(_payload())
+    planner.append_tool_result(
+        blocked_action,
+        {"ok": False, "message": "blocked by safety policy", "data": {"reason": "same action repeated"}},
+    )
+    assert planner._native_history[-1]["content"] == "BLOCKED: same action repeated"
+
+    denied_action = planner.plan(_payload())
+    planner.append_tool_result(
+        denied_action,
+        {"ok": False, "message": "user declined high-risk action", "data": {"reason": "target is Apply"}},
+    )
+    assert planner._native_history[-1]["content"] == "USER_DENIED: target is Apply"
 
 
 def test_native_tool_planner_validates_type_text_args() -> None:

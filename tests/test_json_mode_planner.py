@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+from agent.planners.base import PlannerAction
 from agent.planners.json_mode import JsonModePlanner
 from agent.tool_registry import TOOL_REGISTRY
 
@@ -91,3 +92,27 @@ def test_json_mode_planner_invalid_json_returns_safe_fallback() -> None:
     assert action.tool == "ask_user"
     assert action.needs_user_confirmation is True
     assert "last_parser_error" in action.new_facts
+
+
+def test_json_mode_planner_append_tool_result_is_noop() -> None:
+    content = json.dumps(
+        {
+            "thought": "Observe first.",
+            "tool": "observe",
+            "args": {},
+            "risk": "low",
+            "needs_user_confirmation": False,
+            "new_facts": {},
+        }
+    )
+    llm = FakeLLM([_response(content)])
+    planner = JsonModePlanner(llm_client=llm, registry=TOOL_REGISTRY)
+
+    planner.append_tool_result(
+        PlannerAction(tool="observe", args={}, native_tool_call_id="call_json"),
+        {"ok": True, "message": "observed", "data": {}},
+    )
+    action = planner.plan(_payload())
+
+    assert action.tool == "observe"
+    assert len(llm.calls) == 1
