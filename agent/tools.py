@@ -6,6 +6,10 @@ from typing import Any
 from rich.console import Console
 
 
+def compact_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+
 TOOL_DESCRIPTIONS: dict[str, dict[str, str]] = {
     "goto": {
         "kind": "mutating",
@@ -150,6 +154,4 @@ class ToolDispatcher:
         return {"ok": True, "message": "user answered", "data": {"answer": answer}}
 
 
-def compact_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, default=str)
 

@@ -45,3 +45,15 @@ def test_planner_confirmation_flag_is_high_risk() -> None:
     risky, reason = is_high_risk(action, obs)
     assert risky is True
     assert "confirmation" in reason
+
+
+def test_press_enter_with_dangerous_context_is_high_risk() -> None:
+    obs = {"snapshot_yaml": ""}
+    action = {
+        "tool": "press_key",
+        "args": {"key": "enter", "comment": "confirming payment"},
+        "needs_user_confirmation": False,
+    }
+    risky, reason = is_high_risk(action, obs)
+    assert risky is True
+    assert "pressing Enter" in reason
