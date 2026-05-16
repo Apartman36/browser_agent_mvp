@@ -14,11 +14,7 @@ def main() -> int:
         print("OPENROUTER_API_KEY is missing. Create .env from .env.example and add the key.")
         return 1
 
-    model = (os.getenv("MODEL") or "").strip()
-    if not model:
-        print("MODEL is missing. Set it to an OpenRouter model ID verified for your account.")
-        return 1
-
+    model = os.getenv("MODEL", "google/gemma-4-31b-it:free")
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=api_key,

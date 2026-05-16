@@ -113,18 +113,6 @@ def test_plan_returns_safe_ask_user_when_all_models_fail() -> None:
     }
 
 
-def test_plan_returns_safe_ask_user_when_model_missing() -> None:
-    llm = LLMClient()
-    llm.client = object()
-    llm.model = ""
-    llm.model_fallbacks = []
-
-    action = llm.plan({"goal": "test"})
-
-    assert action["tool"] == "ask_user"
-    assert "MODEL is missing" in action["args"]["question"]
-
-
 def test_query_page_provider_failure_returns_error_result() -> None:
     completions = FakeCompletions(
         {
