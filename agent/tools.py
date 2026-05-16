@@ -62,6 +62,22 @@ TOOL_DESCRIPTIONS: dict[str, dict[str, str]] = {
         "args": '{"ref": "string|null"}',
         "description": "Extract visible text from a specific current ref or from the full page.",
     },
+
+    "extract_dom": {
+        "kind": "read-only",
+        "args": '{"selector": "string"}',
+        "description": "Extract raw DOM/HTML for a given CSS selector.",
+    },
+    "extract_css": {
+        "kind": "read-only",
+        "args": '{"selector": "string", "property": "string"}',
+        "description": "Extract computed CSS property value for a given CSS selector.",
+    },
+    "dismiss_popup": {
+        "kind": "mutating",
+        "args": '{}',
+        "description": "Attempt to auto-dismiss common pop-ups or overlays.",
+    },
     "ask_user": {
         "kind": "read-only",
         "args": '{"question": "string"}',
@@ -124,6 +140,13 @@ class ToolDispatcher:
                 return self.browser.screenshot(bool(args.get("full_page", False)))
             if tool == "extract_text":
                 return self.browser.extract_text(args.get("ref"))
+
+            if tool == "extract_dom":
+                return self.browser.extract_dom(str(args.get("selector", "body")))
+            if tool == "extract_css":
+                return self.browser.extract_css(str(args.get("selector", "")), str(args.get("property", "")))
+            if tool == "dismiss_popup":
+                return self.browser.dismiss_popup()
             if tool == "ask_user":
                 return self.ask_user(str(args.get("question", "Continue?")))
             if tool == "done":
@@ -152,7 +175,8 @@ class ToolDispatcher:
     def ask_user(self, question: str) -> dict[str, Any]:
         # input() doesn't support rich markup, but we print it via console first to be safe and consistent
         self.console.print(f"[bold]Question:[/bold] {escape(question)}")
-        answer = input("> ")
+        from agent.core import wait_for_user_input
+        answer = wait_for_user_input(question)
         return {"ok": True, "message": "user answered", "data": {"answer": answer}}
 
 
