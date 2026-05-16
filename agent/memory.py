@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections import deque
 from typing import Any
 import sqlite3
-import json
 
 class Memory:
     def __init__(self, goal: str, db_path: str = "memory.db") -> None:
