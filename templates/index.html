@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous Browser Agent Dashboard</title>
+    <!-- Use Stitch design system styling if generated -->
+    <style>
+        /* Modern SaaS CSS variables */
+        :root {
+            --primary: #0066ff;
+            --surface: #ffffff;
+            --surface-container: #f9f9f9;
+            --surface-container-high: #e1e2ee;
+            --on-surface: #191b24;
+            --on-surface-variant: #424656;
+            --outline: #727687;
+            --outline-variant: #c2c6d8;
+            --error: #ba1a1a;
+            --success: #0d9488;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--surface-container);
+            color: var(--on-surface);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Layout */
+        .dashboard-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Main Chat Area */
+        .main-chat {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--outline-variant);
+            background: var(--surface);
+            padding: 24px;
+        }
+
+        .chat-header {
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--outline-variant);
+        }
+
+        .chat-header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .chat-history {
+            flex-grow: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding-right: 8px;
+        }
+
+        /* Message Bubbles */
+        .message {
+            padding: 12px 16px;
+            border-radius: 8px;
+            max-width: 85%;
+            word-wrap: break-word;
+            line-height: 1.5;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background-color: var(--primary);
+            color: white;
+            border-bottom-right-radius: 2px;
+        }
+
+        .message.agent {
+            align-self: flex-start;
+            background-color: var(--surface-container);
+            border: 1px solid var(--outline-variant);
+            border-bottom-left-radius: 2px;
+        }
+
+        .message.system {
+            align-self: center;
+            background-color: transparent;
+            color: var(--on-surface-variant);
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            text-align: center;
+        }
+
+        .thought-block {
+            background-color: #f1f5f9;
+            padding: 8px 12px;
+            border-left: 3px solid var(--outline);
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: var(--on-surface-variant);
+            display: none; /* hidden by default based on toggle */
+        }
+
+        .thought-block.show {
+            display: block;
+        }
+
+        /* Input Controls */
+        .controls-container {
+            display: flex;
+            gap: 12px;
+            align-items: stretch;
+            padding-top: 16px;
+            border-top: 1px solid var(--outline-variant);
+        }
+
+        .chat-input {
+            flex-grow: 1;
+            padding: 12px 16px;
+            border: 1px solid var(--outline-variant);
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: none;
+            height: 24px; /* single line default */
+            transition: border-color 0.2s;
+        }
+
+        .chat-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.1);
+        }
+
+        button {
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 500;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #0050cb;
+        }
+
+        .btn-danger {
+            background-color: var(--surface);
+            color: var(--error);
+            border: 1px solid var(--error);
+        }
+
+        .btn-danger:hover {
+            background-color: #fff0f0;
+        }
+
+        .btn-secondary {
+            background-color: var(--surface);
+            color: var(--on-surface);
+            border: 1px solid var(--outline-variant);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--surface-container);
+        }
+
+        /* Sidebar Dashboard */
+        .sidebar {
+            width: 340px;
+            min-width: 340px;
+            background: var(--surface);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .panel {
+            padding: 24px;
+            border-bottom: 1px solid var(--outline-variant);
+        }
+
+        .panel h3 {
+            margin-top: 0;
+            margin-bottom: 16px;
+            font-size: 14px;
+            text-transform: uppercase;
+            color: var(--on-surface-variant);
+            letter-spacing: 0.05em;
+        }
+
+        /* Step Tracker */
+        .progress-bar-bg {
+            height: 8px;
+            background-color: var(--surface-container-high);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background-color: var(--primary);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .step-text {
+            font-size: 13px;
+            color: var(--on-surface-variant);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Goal Panel */
+        .goal-card {
+            background-color: var(--surface-container);
+            border: 1px solid var(--outline-variant);
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .goal-label {
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--outline);
+            margin-bottom: 4px;
+        }
+
+        .goal-value {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 12px;
+        }
+
+        .goal-value:last-child {
+            margin-bottom: 0;
+        }
+
+        /* Data list */
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--surface-container-high);
+            font-size: 13px;
+        }
+
+        .data-row:last-child {
+            border-bottom: none;
+        }
+
+        .data-key {
+            color: var(--on-surface-variant);
+        }
+
+        .data-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 500;
+        }
+
+        /* Toggle */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 16px;
+            padding: 12px;
+            background: var(--surface-container);
+            border-radius: 8px;
+        }
+
+        .toggle-label {
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--outline-variant);
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        input:checked + .slider {
+            background-color: var(--primary);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Main Chat Area -->
+        <main class="main-chat">
+            <div class="chat-header">
+                <h1>Agent.ai</h1>
+            </div>
+
+            <div class="chat-history" id="chat">
+                <div class="message system">Session started</div>
+            </div>
+
+            <div class="controls-container">
+                <input type="text" id="userInput" class="chat-input" placeholder="Type a task, goal, or answer..." onkeypress="handleKeyPress(event)">
+                <button class="btn-primary" onclick="sendInput()">Send</button>
+                <button class="btn-danger" onclick="interruptAgent()">Interrupt</button>
+                <button class="btn-secondary" onclick="clearChat()">Clear</button>
+            </div>
+        </main>
+
+        <!-- Right Sidebar -->
+        <aside class="sidebar">
+            <!-- Step Tracker Panel -->
+            <div class="panel">
+                <h3>Execution Status</h3>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="stepProgress" style="width: 0%"></div>
+                </div>
+                <div class="step-text">
+                    <span id="stepCount">Ready</span>
+                    <span id="stepStatus" style="color: var(--primary); font-weight: 500;">Idle</span>
+                </div>
+
+                <div class="toggle-container">
+                    <span class="toggle-label">Show Thoughts</span>
+                    <label class="switch">
+                        <input type="checkbox" id="thoughtToggle" onchange="toggleThoughts()" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Active Goal Panel -->
+            <div class="panel">
+                <h3>Active Context</h3>
+                <div class="goal-card">
+                    <div class="goal-label">MAIN GOAL</div>
+                    <div class="goal-value" id="mainGoal">None</div>
+
+                    <div class="goal-label">CURRENT SUB-GOAL</div>
+                    <div class="goal-value" id="currentSubGoal">None</div>
+
+                    <div class="goal-label">ACTIVE URL</div>
+                    <div class="goal-value" id="activeUrl" style="word-break: break-all; font-size: 12px;">-</div>
+                </div>
+            </div>
+
+            <!-- Memory & Facts Panel -->
+            <div class="panel">
+                <h3>Memory State</h3>
+                <div id="memoryStats">
+                    <div class="data-row">
+                        <span class="data-key">Facts Saved</span>
+                        <span class="data-value" id="factCount">0</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-key">Recent Actions</span>
+                        <span class="data-value" id="historyCount">0 / 8</span>
+                    </div>
+                </div>
+
+                <h3 style="margin-top: 24px; font-size: 12px;">Saved Facts</h3>
+                <div id="factsList" style="font-size: 12px; color: var(--on-surface-variant); max-height: 200px; overflow-y: auto;">
+                    <i>No facts saved yet.</i>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script>
+        let lastLogIndex = 0;
+        let showThoughts = true;
+        let isAgentRunning = false;
+
+        function toggleThoughts() {
+            showThoughts = document.getElementById('thoughtToggle').checked;
+            const thoughts = document.querySelectorAll('.thought-block');
+            thoughts.forEach(t => {
+                if (showThoughts) t.classList.add('show');
+                else t.classList.remove('show');
+            });
+        }
+
+        // Parse and render formatted logs without tags
+        function renderLog(logText) {
+            // Very basic parser for the previous log formats
+            // Better to parse structured JSON from the backend in a full refactor,
+            // but this handles the current text-based UI logs
+
+            const div = document.createElement("div");
+
+            // Check if user input
+            if (logText.startsWith("Starting task:")) {
+                div.className = "message user";
+                div.innerText = logText.replace("Starting task: ", "");
+
+                // Update UI state
+                document.getElementById('mainGoal').innerText = div.innerText;
+                document.getElementById('stepStatus').innerText = "Running";
+                isAgentRunning = true;
+            }
+            // Current sub-goal
+            else if (logText.includes("Current Sub-Goal")) {
+                div.className = "message system";
+                // Extract goal text (simplistic)
+                const match = logText.match(/│(.*)│/);
+                const subGoal = match ? match[1].trim() : logText.replace(/╭─+|╰─+|│|Current Sub-Goal/g, "").trim();
+                div.innerText = `Sub-goal: ${subGoal}`;
+                document.getElementById('currentSubGoal').innerText = subGoal;
+            }
+            // Step counter
+            else if (logText.includes("Step ")) {
+                div.className = "message system";
+
+                // Clean up tags
+                let cleanLog = logText.replace(/\[\/?bold[^\]]*\]/g, "").replace(/\[\/?dim[^\]]*\]/g, "");
+                div.innerText = cleanLog;
+
+                // Update tracker
+                const stepMatch = cleanLog.match(/Step (\d+)\/(\d+)/);
+                if (stepMatch) {
+                    const current = parseInt(stepMatch[1]);
+                    const max = parseInt(stepMatch[2]);
+                    document.getElementById('stepCount').innerText = `${current} / ${max}`;
+                    document.getElementById('stepProgress').style.width = `${(current/max)*100}%`;
+                }
+
+                const urlMatch = cleanLog.match(/URL:\s+(\S+)/);
+                if (urlMatch) {
+                    document.getElementById('activeUrl').innerText = urlMatch[1];
+                }
+            }
+            // Assistant thought
+            else if (logText.includes("Assistant:")) {
+                div.className = `message agent thought-block ${showThoughts ? 'show' : ''}`;
+                div.innerText = "🧠 " + logText.replace(/\[\/?bold[^\]]*\]/g, "").replace("Assistant: ", "");
+            }
+            // Tool usage
+            else if (logText.includes("Using tool:")) {
+                div.className = "message agent";
+                div.innerHTML = `<strong>🛠️ Action:</strong> ${logText.replace(/\[\/?bold[^\]]*\]/g, "").replace("Using tool: ", "")}`;
+            }
+            // Final report
+            else if (logText.includes("Final report")) {
+                div.className = "message agent";
+                div.style.border = "1px solid var(--success)";
+                div.innerText = logText.replace(/\[\/?bold[^\]]*\]/g, "");
+
+                // Update state
+                document.getElementById('stepStatus').innerText = "Finished";
+                document.getElementById('stepStatus').style.color = "var(--success)";
+                isAgentRunning = false;
+            }
+            // Other logs (errors, waiting, etc)
+            else {
+                div.className = "message system";
+                div.innerText = logText.replace(/\[\/?.*?\]/g, ""); // Strip all rich tags
+
+                if (logText.includes("Error:") || logText.includes("Stuck")) {
+                    div.style.color = "var(--error)";
+                    document.getElementById('stepStatus').innerText = "Error/Stuck";
+                    document.getElementById('stepStatus').style.color = "var(--error)";
+                }
+            }
+
+            return div;
+        }
+
+        function pollState() {
+            // Poll for logs
+            fetch('/logs?start=' + lastLogIndex)
+            .then(r => r.json())
+            .then(data => {
+                const chat = document.getElementById("chat");
+                if (data.logs && data.logs.length > 0) {
+                    data.logs.forEach(log => {
+                        const el = renderLog(log);
+                        if (el) chat.appendChild(el);
+                    });
+                    lastLogIndex = data.next_index;
+                    chat.scrollTop = chat.scrollHeight;
+                }
+            }).catch(e => console.error(e));
+
+            // Poll for memory state
+            fetch('/state')
+            .then(r => r.json())
+            .then(data => {
+                if (data.facts) {
+                    const keys = Object.keys(data.facts);
+                    document.getElementById('factCount').innerText = keys.length;
+
+                    if (keys.length > 0) {
+                        const list = document.getElementById('factsList');
+                        list.innerHTML = '';
+                        keys.forEach(k => {
+                            const d = document.createElement('div');
+                            d.style.marginBottom = '8px';
+                            d.innerHTML = `<strong>${k}:</strong> <span style="font-family: monospace;">${data.facts[k]}</span>`;
+                            list.appendChild(d);
+                        });
+                    }
+                }
+
+                if (data.history_len !== undefined) {
+                    document.getElementById('historyCount').innerText = `${data.history_len} / 8`;
+                }
+
+                if (data.is_running !== undefined && data.is_running !== isAgentRunning) {
+                    isAgentRunning = data.is_running;
+                    if (!isAgentRunning && document.getElementById('stepStatus').innerText === "Running") {
+                        document.getElementById('stepStatus').innerText = "Finished";
+                    }
+                }
+            }).catch(e => console.error(e));
+        }
+
+        setInterval(pollState, 1000);
+
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') sendInput();
+        }
+
+        function sendInput() {
+            const text = document.getElementById("userInput").value;
+            if (!text) return;
+
+            // Optimistic UI update for chat if it's an answer to a prompt, otherwise starting task handles it
+            if (isAgentRunning) {
+                const div = document.createElement("div");
+                div.className = "message user";
+                div.innerText = text;
+                document.getElementById("chat").appendChild(div);
+                document.getElementById("chat").scrollTop = document.getElementById("chat").scrollHeight;
+            }
+
+            document.getElementById("userInput").value = "";
+            fetch('/input', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({text: text})
+            });
+        }
+
+        function interruptAgent() {
+            fetch('/interrupt', {method: 'POST'})
+            .then(() => {
+                const div = document.createElement("div");
+                div.className = "message system";
+                div.style.color = "var(--error)";
+                div.innerText = "Interrupt signal sent...";
+                document.getElementById("chat").appendChild(div);
+            });
+        }
+
+        function clearChat() {
+            fetch('/clear', {method: 'POST'})
+            .then(() => {
+                document.getElementById("chat").innerHTML = '<div class="message system">Session cleared. Ready for new task.</div>';
+                document.getElementById('mainGoal').innerText = 'None';
+                document.getElementById('currentSubGoal').innerText = 'None';
+                document.getElementById('activeUrl').innerText = '-';
+                document.getElementById('stepCount').innerText = 'Ready';
+                document.getElementById('stepProgress').style.width = '0%';
+                document.getElementById('stepStatus').innerText = 'Idle';
+                document.getElementById('stepStatus').style.color = 'var(--primary)';
+                document.getElementById('factsList').innerHTML = '<i>No facts saved yet.</i>';
+                document.getElementById('factCount').innerText = '0';
+                document.getElementById('historyCount').innerText = '0 / 8';
+                lastLogIndex = 0;
+            });
+        }
+    </script>
+</body>
+</html>

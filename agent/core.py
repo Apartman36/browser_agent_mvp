@@ -10,10 +10,10 @@ from rich.markup import escape
 from rich.panel import Panel
 
 from agent.llm import LLMClient
-from agent.logging_utils import append_action_log, write_final_report
+from agent.logging_utils import append_action_log
 from agent.memory import Memory
 from agent.safety import is_high_risk, user_confirmed
-from agent.tools import ToolDispatcher, compact_json
+from agent.tools import ToolDispatcher
 
 LLM_FALLBACK_RETRY_ANSWERS = {"retry", "r", "повтор", "повтори"}
 LLM_FALLBACK_STOP_ANSWERS = {"stop", "s", "стоп"}
@@ -68,7 +68,7 @@ def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClien
 
             while not goal_completed:
                 steps_taken = 0
-                stuck = False
+
 
                 for step in range(1, max_steps + 1):
                     steps_taken = step
@@ -126,6 +126,7 @@ def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClien
         if final_status != "success":
             break
 
+    ui_print(f"\n[bold green]Final report[/bold green]\n\n- Status: {final_status}\n- Goal: {goal}\n\n## Summary\n\n{final_summary}")
     return {"ok": final_status == "success", "status": final_status, "summary": final_summary, "report_path": ""}
 
 def _orchestrate_goals(goal: str, llm: LLMClient) -> list[str]:
@@ -186,6 +187,8 @@ def _is_llm_provider_fallback_action(action: dict[str, Any]) -> bool:
 
 def _llm_provider_fallback_decision(result: dict[str, Any]) -> str:
     answer = str(result.get("data", {}).get("answer", "")).strip().lower()
-    if answer in LLM_FALLBACK_RETRY_ANSWERS: return "retry"
-    if answer in LLM_FALLBACK_STOP_ANSWERS: return "stop"
+    if answer in LLM_FALLBACK_RETRY_ANSWERS:
+        return "retry"
+    if answer in LLM_FALLBACK_STOP_ANSWERS:
+        return "stop"
     return "continue"

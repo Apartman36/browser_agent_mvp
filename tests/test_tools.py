@@ -1,10 +1,7 @@
-import json
-import sys
-from unittest.mock import MagicMock
 
 # Mock rich before importing agent.tools
-sys.modules["rich"] = MagicMock()
-sys.modules["rich.console"] = MagicMock()
+
+
 
 from datetime import datetime
 from agent.tools import compact_json
