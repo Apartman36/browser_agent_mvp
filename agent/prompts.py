@@ -26,13 +26,7 @@ AVAILABLE TOOLS:
 {tool_descriptions}
 
 OUTPUT FORMAT:
-Return strictly valid JSON. No markdown. No prose outside JSON.
-
-Schema:
-{
-  "thought": "one short sentence explaining the next action",
-  "tool": "goto | observe | query_page | click_element | type_text | press_key | scroll | wait | screenshot | extract_text | ask_user | done",
-  "args": {},
+You must use the provided execute_action tool.,
   "risk": "low | medium | high",
   "needs_user_confirmation": false,
   "new_facts": {}

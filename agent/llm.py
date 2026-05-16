@@ -303,8 +303,7 @@ class LLMClient:
 
     @staticmethod
     def _parse_action(content: str) -> PlannerAction:
-        text = strip_json_fences(content)
-        data = json.loads(text)
+        data = json.loads(content)
         if data.get("tool") not in TOOL_DESCRIPTIONS:
             raise ValueError(f"Unknown tool: {data.get('tool')}")
         return PlannerAction.model_validate(data)

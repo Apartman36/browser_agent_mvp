@@ -181,3 +181,43 @@ class ToolDispatcher:
 
 
 
+
+
+def get_tools_schema() -> list[dict[str, Any]]:
+    return [{
+        "type": "function",
+        "function": {
+            "name": "execute_action",
+            "description": "Execute the next browser action.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "thought": {
+                        "type": "string",
+                        "description": "One short sentence explaining the next action"
+                    },
+                    "tool": {
+                        "type": "string",
+                        "enum": list(TOOL_DESCRIPTIONS.keys())
+                    },
+                    "args": {
+                        "type": "object",
+                        "description": "Arguments for the tool (values must be strings, booleans, or integers as required)"
+                    },
+                    "risk": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"]
+                    },
+                    "needs_user_confirmation": {
+                        "type": "boolean"
+                    },
+                    "new_facts": {
+                        "type": "object",
+                        "description": "Any new facts discovered"
+                    }
+                },
+                "required": ["thought", "tool", "args", "risk", "needs_user_confirmation", "new_facts"],
+                "additionalProperties": False
+            }
+        }
+    }]

@@ -124,7 +124,7 @@ Select-String -Path .\agent\*.py -Pattern "browser_use|skyvern|stagehand|seleniu
 
 ## Research / inspiration
 
-- Playwright MCP uses snapshot/ref-style interaction.
+- Playwright uses ARIA snapshot/ref-style interaction (Note: This is not related to the Model Context Protocol / MCP).
 - browser-use inspired indexed and serialized page representation.
 - Stagehand inspired the act/observe/extract mental model.
 - Skyvern inspired safety notes and production workflow thinking.
