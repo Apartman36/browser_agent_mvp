@@ -61,7 +61,7 @@ class AgentConfig:
 
 
 def load_config() -> AgentConfig:
-    load_dotenv(dotenv_path=Path.cwd() / ".env", override=True)
+    load_dotenv(dotenv_path=Path.cwd() / ".env", override=False)
 
     model = (os.getenv("MODEL", DEFAULT_MODEL) or DEFAULT_MODEL).strip()
     planner_mode = (os.getenv("PLANNER_MODE", DEFAULT_PLANNER_MODE) or DEFAULT_PLANNER_MODE).strip().lower()

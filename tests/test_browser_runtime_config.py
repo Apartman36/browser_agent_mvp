@@ -85,7 +85,80 @@ def test_chrome_profile_dir_does_not_default_to_default_chrome_profile() -> None
     assert "AppData" not in runtime.active_user_data_dir()
 
 
-def test_load_config_exposes_browser_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_process_env_overrides_dotenv(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "BROWSER_MODE=chromium",
+                "CHROME_USER_DATA_DIR=.chrome_agent_profile",
+                "BROWSER_SLOW_MO_MS=0",
+                "ACTION_MIN_DELAY_MS=0",
+                "ACTION_MAX_DELAY_MS=0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("BROWSER_MODE", "chrome_profile")
+    monkeypatch.setenv(
+        "CHROME_USER_DATA_DIR", "C:/Users/hustlePC/browser-agent-chrome-profile"
+    )
+    monkeypatch.setenv("BROWSER_SLOW_MO_MS", "150")
+    monkeypatch.setenv("ACTION_MIN_DELAY_MS", "500")
+    monkeypatch.setenv("ACTION_MAX_DELAY_MS", "1500")
+
+    config = load_config()
+
+    assert config.browser.mode == "chrome_profile"
+    assert (
+        config.browser.chrome_user_data_dir
+        == "C:/Users/hustlePC/browser-agent-chrome-profile"
+    )
+    assert config.browser.slow_mo_ms == 150
+    assert config.browser.action_min_delay_ms == 500
+    assert config.browser.action_max_delay_ms == 1500
+
+
+def test_dotenv_used_when_process_env_absent(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for var in (
+        "BROWSER_MODE",
+        "CHROME_USER_DATA_DIR",
+        "CHROME_CHANNEL",
+        "BROWSER_SLOW_MO_MS",
+        "ACTION_MIN_DELAY_MS",
+        "ACTION_MAX_DELAY_MS",
+        "CHROMIUM_USER_DATA_DIR",
+        "RUN_LOG_ROOT",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "BROWSER_MODE=chrome_profile",
+                "CHROME_USER_DATA_DIR=C:/Users/hustlePC/browser-agent-chrome-profile",
+                "BROWSER_SLOW_MO_MS=150",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config()
+
+    assert config.browser.mode == "chrome_profile"
+    assert (
+        config.browser.chrome_user_data_dir
+        == "C:/Users/hustlePC/browser-agent-chrome-profile"
+    )
+    assert config.browser.slow_mo_ms == 150
+
+
+def test_load_config_exposes_browser_runtime(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("BROWSER_MODE", "chrome_profile")
     monkeypatch.setenv("CHROME_USER_DATA_DIR", ".my_agent_chrome")
     monkeypatch.setenv("RUN_LOG_ROOT", "logs/myruns")
