@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import json
-import os
+import re
 import time
-from typing import Any, Literal
+from typing import Any
 
 from openai import (
     APIConnectionError,
@@ -15,27 +15,14 @@ from openai import (
     OpenAI,
     RateLimitError,
 )
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 
+from agent.config import load_config
+from agent.planners.base import PlannerAction
 from agent.prompts import SUBAGENT_PROMPT, SYSTEM_PROMPT
-from agent.tools import TOOL_DESCRIPTIONS
+from agent.tool_registry import TOOL_REGISTRY
 
-ToolName = Literal[
-    "goto",
-    "observe",
-    "query_page",
-    "click_element",
-    "type_text",
-    "press_key",
-    "scroll",
-    "wait",
-    "screenshot",
-    "extract_text",
-    "ask_user",
-    "done",
-]
 
-DEFAULT_MODEL = "google/gemma-4-31b-it:free"
 PROVIDER_ERROR_TYPES = (
     RateLimitError,
     InternalServerError,
@@ -47,15 +34,6 @@ RETRY_BACKOFF_SECONDS = (2.0, 5.0)
 MAX_RETRY_AFTER_SECONDS = 10.0
 
 
-class PlannerAction(BaseModel):
-    thought: str
-    tool: ToolName
-    args: dict[str, Any] = Field(default_factory=dict)
-    risk: Literal["low", "medium", "high"] = "low"
-    needs_user_confirmation: bool = False
-    new_facts: dict[str, Any] = Field(default_factory=dict)
-
-
 class ProviderUnavailableError(Exception):
     def __init__(self, model: str, original: Exception) -> None:
         super().__init__(str(original))
@@ -65,13 +43,15 @@ class ProviderUnavailableError(Exception):
 
 class LLMClient:
     def __init__(self) -> None:
-        self.api_key = os.getenv("OPENROUTER_API_KEY", "")
-        self.model = os.getenv("MODEL", DEFAULT_MODEL) or DEFAULT_MODEL
-        self.model_fallbacks = self._parse_model_fallbacks(
-            os.getenv("MODEL_FALLBACKS", "")
-        )
-        self.verifier_model = os.getenv("MODEL_VERIFIER", self.model) or self.model
+        self.config = load_config()
+        self.api_key = self.config.openrouter_api_key
+        self.model = self.config.model
+        self.model_fallbacks = list(self.config.model_fallbacks)
+        if self.config.paid_fallback_model and self.config.paid_fallback_model not in self.model_fallbacks:
+            self.model_fallbacks.append(self.config.paid_fallback_model)
+        self.verifier_model = self.config.verifier_model or self.model
         self._sleep = time.sleep
+        self.provider_unavailable_error_type = ProviderUnavailableError
         self.client = None
         if self.api_key:
             self.client = OpenAI(
@@ -83,35 +63,10 @@ class LLMClient:
                 },
             )
 
-    def plan(self, prompt_payload: dict[str, Any], screenshot_base64: str | None = None) -> dict[str, Any]:
-        if not self.client:
-            return self._missing_key_action()
+    def plan(self, prompt_payload: dict[str, Any]) -> dict[str, Any]:
+        from agent.planners.json_mode import JsonModePlanner
 
-        user_prompt = (
-            "Current compact memory and page observation JSON:\n"
-            f"{json.dumps(prompt_payload, ensure_ascii=False)}\n\n"
-            "Choose the single next action. Return JSON only."
-        )
-        user_message: list[dict[str, Any]] | str = user_prompt
-        if screenshot_base64:
-            user_message = [
-                {"type": "text", "text": user_prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{screenshot_base64}"}}
-            ]
-
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_message},
-        ]
-
-        models = self._candidate_models(self.model)
-        for index, model in enumerate(models):
-            try:
-                return self._plan_with_model(model, messages)
-            except ProviderUnavailableError:
-                self._print_fallback_message(models, index)
-
-        return self._provider_unavailable_action()
+        return JsonModePlanner(llm_client=self, registry=TOOL_REGISTRY).plan(prompt_payload).to_action_dict()
 
     def query_page(self, observation: dict[str, Any], question: str) -> dict[str, Any]:
         if not self.client:
@@ -146,6 +101,9 @@ class LLMClient:
         ]
 
         models = self._candidate_models(self.verifier_model)
+        if not models:
+            return self._missing_model_result()
+
         for index, model in enumerate(models):
             try:
                 response = self._chat_completion_with_retries(
@@ -188,7 +146,7 @@ class LLMClient:
             content = response.choices[0].message.content or ""
             try:
                 parsed = self._parse_action(content)
-                return parsed.model_dump()
+                return parsed.to_action_dict()
             except (json.JSONDecodeError, ValidationError, ValueError) as exc:
                 last_error = str(exc)
                 model_messages.append({"role": "assistant", "content": content})
@@ -241,8 +199,8 @@ class LLMClient:
         models: list[str] = []
         seen: set[str] = set()
         for model in [primary_model, *self.model_fallbacks]:
-            model = model.strip()
-            if model and model not in seen:
+            model = str(model or "").strip()
+            if model and model not in models:
                 models.append(model)
                 seen.add(model)
         return models
@@ -303,9 +261,11 @@ class LLMClient:
 
     @staticmethod
     def _parse_action(content: str) -> PlannerAction:
-        data = json.loads(content)
-        if data.get("tool") not in TOOL_DESCRIPTIONS:
-            raise ValueError(f"Unknown tool: {data.get('tool')}")
+        text = strip_json_fences(content)
+        data = json.loads(text)
+        tool_name = str(data.get("tool", ""))
+        TOOL_REGISTRY.get(tool_name)
+        data["args"] = TOOL_REGISTRY.validate_args(tool_name, data.get("args") or {}).model_dump()
         return PlannerAction.model_validate(data)
 
     @staticmethod
@@ -319,6 +279,35 @@ class LLMClient:
             "risk": "medium",
             "needs_user_confirmation": False,
             "new_facts": {},
+        }
+
+    @staticmethod
+    def _missing_model_action() -> dict[str, Any]:
+        return {
+            "thought": "OpenRouter model configuration is missing, so I need the user to set a verified model ID.",
+            "tool": "ask_user",
+            "args": {
+                "question": (
+                    "MODEL is missing in .env. Set MODEL to an OpenRouter model ID verified for your account, "
+                    "or configure MODEL_FALLBACKS, then rerun the agent."
+                )
+            },
+            "risk": "medium",
+            "needs_user_confirmation": False,
+            "new_facts": {},
+        }
+
+    @staticmethod
+    def _missing_model_result() -> dict[str, Any]:
+        return {
+            "ok": False,
+            "message": "OpenRouter model is not configured.",
+            "data": {
+                "answer": (
+                    "Set MODEL or MODEL_VERIFIER in .env to an OpenRouter model ID verified for your account, "
+                    "or configure MODEL_FALLBACKS."
+                )
+            },
         }
 
     @staticmethod

@@ -10,92 +10,21 @@ from rich.markup import escape
 def compact_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, default=str)
 
+from agent.tool_registry import TOOL_REGISTRY
+
 
 TOOL_DESCRIPTIONS: dict[str, dict[str, str]] = {
-    "goto": {
-        "kind": "mutating",
-        "args": '{"url": "string"}',
-        "description": "Navigate the current tab to a URL.",
-    },
-    "observe": {
-        "kind": "read-only",
-        "args": "{}",
-        "description": "Refresh the current page observation.",
-    },
-    "query_page": {
-        "kind": "read-only",
-        "args": '{"question": "string"}',
-        "description": "Ask a DOM/page analyst sub-agent a compact question about the current page.",
-    },
-    "click_element": {
-        "kind": "mutating",
-        "args": '{"ref": "string"}',
-        "description": "Click one element by its current Playwright ARIA ref.",
-    },
-    "type_text": {
-        "kind": "mutating",
-        "args": '{"ref": "string", "text": "string", "submit": "boolean", "clear": "boolean"}',
-        "description": "Fill or type text into an element by current ARIA ref, optionally pressing Enter.",
-    },
-    "press_key": {
-        "kind": "mutating",
-        "args": '{"key": "string"}',
-        "description": "Press a keyboard key in the current browser context.",
-    },
-    "scroll": {
-        "kind": "mutating",
-        "args": '{"direction": "up|down"}',
-        "description": "Scroll the visible page up or down.",
-    },
-    "wait": {
-        "kind": "read-only",
-        "args": '{"ms": "integer"}',
-        "description": "Wait for a bounded number of milliseconds.",
-    },
-    "screenshot": {
-        "kind": "read-only",
-        "args": '{"full_page": "boolean"}',
-        "description": "Save a screenshot under logs/screenshots.",
-    },
-    "extract_text": {
-        "kind": "read-only",
-        "args": '{"ref": "string|null"}',
-        "description": "Extract visible text from a specific current ref or from the full page.",
-    },
-
-    "extract_dom": {
-        "kind": "read-only",
-        "args": '{"selector": "string"}',
-        "description": "Extract raw DOM/HTML for a given CSS selector.",
-    },
-    "extract_css": {
-        "kind": "read-only",
-        "args": '{"selector": "string", "property": "string"}',
-        "description": "Extract computed CSS property value for a given CSS selector.",
-    },
-    "dismiss_popup": {
-        "kind": "mutating",
-        "args": '{}',
-        "description": "Attempt to auto-dismiss common pop-ups or overlays.",
-    },
-    "ask_user": {
-        "kind": "read-only",
-        "args": '{"question": "string"}',
-        "description": "Ask the human for missing information or explicit confirmation.",
-    },
-    "done": {
-        "kind": "read-only",
-        "args": '{"summary": "string", "status": "success|failed|stopped_by_user"}',
-        "description": "Finish the run and produce the final report.",
-    },
+    spec.name: {
+        "kind": "read-only" if spec.read_only else spec.category.value,
+        "args": json.dumps(spec.args_model.model_json_schema().get("properties", {}), ensure_ascii=False),
+        "description": spec.description,
+    }
+    for spec in TOOL_REGISTRY.all()
 }
 
 
 def format_tool_descriptions() -> str:
-    lines = []
-    for name, meta in TOOL_DESCRIPTIONS.items():
-        lines.append(f"- {name} ({meta['kind']}): args {meta['args']}. {meta['description']}")
-    return "\n".join(lines)
+    return TOOL_REGISTRY.prompt_block()
 
 
 class ToolDispatcher:
@@ -180,44 +109,5 @@ class ToolDispatcher:
         return {"ok": True, "message": "user answered", "data": {"answer": answer}}
 
 
-
-
-
-def get_tools_schema() -> list[dict[str, Any]]:
-    return [{
-        "type": "function",
-        "function": {
-            "name": "execute_action",
-            "description": "Execute the next browser action.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "thought": {
-                        "type": "string",
-                        "description": "One short sentence explaining the next action"
-                    },
-                    "tool": {
-                        "type": "string",
-                        "enum": list(TOOL_DESCRIPTIONS.keys())
-                    },
-                    "args": {
-                        "type": "object",
-                        "description": "Arguments for the tool (values must be strings, booleans, or integers as required)"
-                    },
-                    "risk": {
-                        "type": "string",
-                        "enum": ["low", "medium", "high"]
-                    },
-                    "needs_user_confirmation": {
-                        "type": "boolean"
-                    },
-                    "new_facts": {
-                        "type": "object",
-                        "description": "Any new facts discovered"
-                    }
-                },
-                "required": ["thought", "tool", "args", "risk", "needs_user_confirmation", "new_facts"],
-                "additionalProperties": False
-            }
-        }
-    }]
+def compact_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, default=str)
