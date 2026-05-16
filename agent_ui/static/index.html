@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browser Agent UI</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --ink: #172033;
+      --muted: #5d687c;
+      --line: #d8deea;
+      --accent: #1f7a68;
+      --accent-strong: #145b4d;
+      --danger: #b42318;
+      --warn: #a15c07;
+      --code: #101828;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+      gap: 18px;
+      padding: 18px 24px 24px;
+      max-width: 1420px;
+      margin: 0 auto;
+    }
+
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .left, .right {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    textarea, input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 11px;
+      color: var(--ink);
+      background: #fff;
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 170px;
+      resize: vertical;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 110px;
+      gap: 10px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    button {
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 9px 13px;
+      color: #fff;
+      background: var(--accent);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover { background: var(--accent-strong); }
+    button:disabled { cursor: not-allowed; opacity: 0.55; }
+    button.secondary {
+      color: var(--ink);
+      background: #fff;
+      border-color: var(--line);
+    }
+    button.secondary:hover { background: #eef2f8; }
+    button.danger {
+      background: var(--danger);
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #e7f5ef;
+      color: var(--accent-strong);
+      font-weight: 700;
+      text-transform: capitalize;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .metric {
+      min-height: 64px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcff;
+    }
+
+    .metric .value {
+      word-break: break-word;
+      color: var(--code);
+    }
+
+    .log {
+      height: 380px;
+      overflow: auto;
+      padding: 0;
+      background: #111827;
+      color: #e5e7eb;
+      border-radius: 8px;
+      border: 1px solid #1f2937;
+    }
+
+    .event {
+      padding: 10px 12px;
+      border-bottom: 1px solid #263244;
+    }
+
+    .event-type {
+      color: #7dd3fc;
+      font-weight: 700;
+    }
+
+    .event pre,
+    .final pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 6px 0 0;
+      color: inherit;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .final pre {
+      min-height: 120px;
+      color: var(--code);
+    }
+
+    .screenshot img {
+      display: block;
+      width: 100%;
+      max-height: 360px;
+      object-fit: contain;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+    }
+
+    .path {
+      margin-top: 8px;
+      color: var(--muted);
+      word-break: break-all;
+      font: 12px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(15, 23, 42, 0.58);
+    }
+
+    .modal {
+      width: min(620px, 100%);
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      padding: 18px;
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.25);
+    }
+
+    .modal h2 {
+      margin: 0 0 10px;
+      font-size: 16px;
+    }
+
+    .modal pre {
+      max-height: 280px;
+      overflow: auto;
+      padding: 10px;
+      background: #f3f6fb;
+      border-radius: 6px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    @media (max-width: 900px) {
+      header, main { padding-left: 14px; padding-right: 14px; }
+      main { grid-template-columns: 1fr; }
+      .grid { grid-template-columns: 1fr; }
+      .row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Browser Agent UI</h1>
+    <span id="status" class="pill">idle</span>
+  </header>
+
+  <main>
+    <div class="left">
+      <section>
+        <label for="task">Task</label>
+        <textarea id="task" placeholder="Open example.com, read the page title, and finish with done."></textarea>
+        <div class="row">
+          <div>
+            <label for="startUrl">Start URL</label>
+            <input id="startUrl" type="url" placeholder="https://example.com">
+          </div>
+          <div>
+            <label for="maxSteps">Max steps</label>
+            <input id="maxSteps" type="number" min="1" max="100" value="20">
+          </div>
+        </div>
+        <div class="actions">
+          <button id="startBtn">Start</button>
+          <button id="cancelBtn" class="danger" disabled>Cancel</button>
+        </div>
+      </section>
+
+      <section>
+        <label>Current page</label>
+        <div class="grid">
+          <div class="metric">
+            <label>URL</label>
+            <div id="currentUrl" class="value">-</div>
+          </div>
+          <div class="metric">
+            <label>Title</label>
+            <div id="currentTitle" class="value">-</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screenshot">
+        <label>Latest screenshot</label>
+        <div id="screenshotEmpty" class="value">-</div>
+        <img id="screenshotImg" alt="Latest screenshot" hidden>
+        <div id="screenshotPath" class="path"></div>
+      </section>
+    </div>
+
+    <div class="right">
+      <section>
+        <label>Live events</label>
+        <div id="log" class="log"></div>
+      </section>
+
+      <section class="final">
+        <label>Final report</label>
+        <pre id="finalReport"></pre>
+      </section>
+    </div>
+  </main>
+
+  <div id="safetyModal" class="modal-backdrop">
+    <div class="modal">
+      <h2>Safety confirmation</h2>
+      <pre id="safetyText"></pre>
+      <div class="actions">
+        <button id="approveBtn">Approve</button>
+        <button id="denyBtn" class="secondary">Deny</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token") || "";
+    const state = {
+      runId: null,
+      source: null,
+      promptId: null
+    };
+
+    const els = {
+      status: document.getElementById("status"),
+      task: document.getElementById("task"),
+      startUrl: document.getElementById("startUrl"),
+      maxSteps: document.getElementById("maxSteps"),
+      startBtn: document.getElementById("startBtn"),
+      cancelBtn: document.getElementById("cancelBtn"),
+      log: document.getElementById("log"),
+      currentUrl: document.getElementById("currentUrl"),
+      currentTitle: document.getElementById("currentTitle"),
+      finalReport: document.getElementById("finalReport"),
+      screenshotEmpty: document.getElementById("screenshotEmpty"),
+      screenshotImg: document.getElementById("screenshotImg"),
+      screenshotPath: document.getElementById("screenshotPath"),
+      safetyModal: document.getElementById("safetyModal"),
+      safetyText: document.getElementById("safetyText"),
+      approveBtn: document.getElementById("approveBtn"),
+      denyBtn: document.getElementById("denyBtn")
+    };
+
+    function withToken(path) {
+      const sep = path.includes("?") ? "&" : "?";
+      return `${path}${sep}token=${encodeURIComponent(token)}`;
+    }
+
+    async function api(path, options = {}) {
+      const headers = Object.assign({"Content-Type": "application/json"}, options.headers || {});
+      if (token) headers["X-Agent-Token"] = token;
+      const response = await fetch(path, Object.assign({}, options, {headers}));
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`${response.status} ${text}`);
+      }
+      return response.json();
+    }
+
+    function setStatus(status) {
+      els.status.textContent = status;
+      els.cancelBtn.disabled = status !== "running";
+      els.startBtn.disabled = status === "running";
+    }
+
+    function appendEvent(type, data) {
+      const row = document.createElement("div");
+      row.className = "event";
+      const body = JSON.stringify(data, null, 2);
+      row.innerHTML = `<div class="event-type">${type}</div><pre></pre>`;
+      row.querySelector("pre").textContent = body;
+      els.log.appendChild(row);
+      els.log.scrollTop = els.log.scrollHeight;
+    }
+
+    function basename(path) {
+      return String(path || "").split(/[\\/]/).pop();
+    }
+
+    function handleEvent(type, data) {
+      appendEvent(type, data);
+      if (type === "observation") {
+        els.currentUrl.textContent = data.url || "-";
+        els.currentTitle.textContent = data.title || "-";
+      }
+      if (type === "tool_result" && data.data && data.data.url) {
+        els.currentUrl.textContent = data.data.url;
+      }
+      if (type === "screenshot") {
+        const file = basename(data.path);
+        els.screenshotEmpty.hidden = true;
+        els.screenshotImg.hidden = false;
+        els.screenshotImg.src = withToken(`/screenshots/${encodeURIComponent(file)}`);
+        els.screenshotPath.textContent = data.path || "";
+      }
+      if (type === "safety_prompt") {
+        state.promptId = data.prompt_id;
+        els.safetyText.textContent = JSON.stringify(data, null, 2);
+        els.safetyModal.style.display = "flex";
+      }
+      if (type === "done" || type === "error" || type === "cancelled") {
+        setStatus(type === "done" ? "done" : type);
+        els.finalReport.textContent = data.summary || data.final_report || data.message || "";
+        if (state.source) state.source.close();
+      }
+    }
+
+    function openEvents(runId) {
+      if (state.source) state.source.close();
+      state.source = new EventSource(withToken(`/events?run_id=${encodeURIComponent(runId)}`));
+      ["run_started", "observation", "tool_call", "tool_result", "safety_prompt", "screenshot", "done", "error", "cancelled"]
+        .forEach((type) => {
+          state.source.addEventListener(type, (event) => {
+            handleEvent(type, JSON.parse(event.data));
+          });
+        });
+      state.source.onerror = () => {
+        appendEvent("stream_error", {message: "Event stream closed or failed."});
+        if (els.status.textContent === "running") setStatus("error");
+      };
+    }
+
+    els.startBtn.addEventListener("click", async () => {
+      els.log.textContent = "";
+      els.finalReport.textContent = "";
+      els.screenshotEmpty.hidden = false;
+      els.screenshotImg.hidden = true;
+      els.screenshotPath.textContent = "";
+      setStatus("running");
+      try {
+        const run = await api("/runs", {
+          method: "POST",
+          body: JSON.stringify({
+            task: els.task.value,
+            start_url: els.startUrl.value,
+            max_steps: Number(els.maxSteps.value || 20)
+          })
+        });
+        state.runId = run.run_id;
+        openEvents(run.run_id);
+      } catch (err) {
+        setStatus("error");
+        appendEvent("error", {message: err.message});
+      }
+    });
+
+    els.cancelBtn.addEventListener("click", async () => {
+      if (!state.runId) return;
+      try {
+        await api(`/runs/${encodeURIComponent(state.runId)}/cancel`, {method: "POST"});
+      } catch (err) {
+        appendEvent("error", {message: err.message});
+      }
+    });
+
+    async function answerSafety(answer) {
+      if (!state.runId || !state.promptId) return;
+      const promptId = state.promptId;
+      state.promptId = null;
+      els.safetyModal.style.display = "none";
+      await api(`/runs/${encodeURIComponent(state.runId)}/respond`, {
+        method: "POST",
+        body: JSON.stringify({prompt_id: promptId, answer})
+      });
+    }
+
+    els.approveBtn.addEventListener("click", () => answerSafety("y"));
+    els.denyBtn.addEventListener("click", () => answerSafety("n"));
+
+    if (!token) {
+      setStatus("missing token");
+      els.startBtn.disabled = true;
+    } else {
+      setStatus("idle");
+    }
+  </script>
+</body>
+</html>
