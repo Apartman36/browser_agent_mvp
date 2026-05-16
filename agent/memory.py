@@ -2,15 +2,32 @@ from __future__ import annotations
 
 from collections import deque
 from typing import Any
-
+import sqlite3
+import json
 
 class Memory:
-    def __init__(self, goal: str) -> None:
+    def __init__(self, goal: str, db_path: str = "memory.db") -> None:
         self.goal = goal
         self.facts: dict[str, str] = {}
         self.history: deque[dict[str, Any]] = deque(maxlen=8)
         self.current_obs: dict[str, Any] | None = None
         self.step = 0
+
+        self.db_path = db_path
+        self._init_db()
+        self._load_facts()
+
+    def _init_db(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS facts (key TEXT PRIMARY KEY, value TEXT)"
+            )
+
+    def _load_facts(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT key, value FROM facts")
+            for row in cursor:
+                self.facts[row[0]] = row[1]
 
     def update_observation(self, obs: dict[str, Any]) -> None:
         self.current_obs = obs
@@ -35,9 +52,14 @@ class Memory:
     def merge_facts(self, new_facts: dict[str, Any] | None) -> None:
         if not new_facts:
             return
-        for key, value in new_facts.items():
-            self.facts[str(key)] = self._truncate(str(value), 1000)
-
+        with sqlite3.connect(self.db_path) as conn:
+            for key, value in new_facts.items():
+                val_str = self._truncate(str(value), 1000)
+                self.facts[str(key)] = val_str
+                conn.execute(
+                    "INSERT OR REPLACE INTO facts (key, value) VALUES (?, ?)",
+                    (str(key), val_str)
+                )
 
     def get_current_screenshot(self) -> str | None:
         if not self.current_obs:
@@ -73,4 +95,3 @@ class Memory:
         if len(value) <= limit:
             return value
         return value[:limit] + "...[truncated]"
-

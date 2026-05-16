@@ -213,6 +213,39 @@ class Browser:
         except Exception as exc:
             return self._err("extract_text failed", exc)
 
+
+    def extract_dom(self, selector: str) -> dict[str, Any]:
+        try:
+            html = self._page().locator(selector).first.evaluate("el => el.outerHTML")
+            return self._ok("extracted DOM", {"selector": selector, "html": self._truncate(html, 10000)})
+        except Exception as exc:
+            return self._err("extract_dom failed", exc)
+
+    def extract_css(self, selector: str, property: str) -> dict[str, Any]:
+        try:
+            val = self._page().locator(selector).first.evaluate(f"el => window.getComputedStyle(el).getPropertyValue('{property}')")
+            return self._ok("extracted CSS", {"selector": selector, "property": property, "value": val})
+        except Exception as exc:
+            return self._err("extract_css failed", exc)
+
+    def dismiss_popup(self) -> dict[str, Any]:
+        try:
+            # Common close button selectors
+            selectors = [
+                "button[aria-label='Close']", "button[aria-label='close']",
+                ".close-button", ".modal-close", "[data-testid='close-button']",
+                "button:has-text('Dismiss')", "button:has-text('Close')"
+            ]
+            for s in selectors:
+                loc = self._page().locator(s).first
+                if loc.is_visible(timeout=500):
+                    loc.click(timeout=1000)
+                    self._settle()
+                    return self._ok("dismissed popup", {"selector": s})
+            return self._ok("no common popup found", {})
+        except Exception as exc:
+            return self._err("dismiss_popup failed", exc)
+
     def _page(self):
         if self.page is None:
             raise RuntimeError("Browser is not started.")

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from typing import Any
 
 from rich.console import Console
@@ -13,85 +15,151 @@ from agent.memory import Memory
 from agent.safety import is_high_risk, user_confirmed
 from agent.tools import ToolDispatcher, compact_json
 
-
 LLM_FALLBACK_RETRY_ANSWERS = {"retry", "r", "повтор", "повтори"}
 LLM_FALLBACK_STOP_ANSWERS = {"stop", "s", "стоп"}
 
+interrupt_event = threading.Event()
+user_input_queue = []
+ui_logs = []
+
+def ui_print(msg):
+    Console().print(msg)
+    ui_logs.append(str(msg))
+
+def wait_for_user_input(prompt: str) -> str:
+    ui_print(f"[bold yellow]WAITING FOR USER:[/bold yellow] {prompt}")
+    user_input_queue.clear()
+    while not user_input_queue:
+        time.sleep(0.5)
+    return user_input_queue.pop(0)
+
+def handle_interrupt(memory: Memory) -> bool:
+    if interrupt_event.is_set():
+        interrupt_event.clear()
+        ans = wait_for_user_input("[bold red]Execution Paused.[/bold red] Enter new instructions to inject, or 'stop' to abort:")
+        if ans.lower().strip() == 'stop':
+            return True
+        ui_print("[bold green]Injecting instruction and resuming.[/bold green]")
+        memory.merge_facts({"injected_instruction": ans})
+    return False
 
 def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClient | None = None) -> dict[str, Any]:
     console = Console()
     llm = llm_client or LLMClient()
-    memory = Memory(goal)
-    tools = ToolDispatcher(browser=browser, llm_client=llm, console=console)
 
-    console.print(Panel.fit(escape(goal), title="User task", border_style="cyan"))
+    ui_print("[bold yellow]Planner Stage: Analyzing task...[/bold yellow]")
+    sub_goals = _orchestrate_goals(goal, llm)
+    if not sub_goals:
+        return {"ok": False, "status": "stopped_by_user", "summary": "Task aborted during planning.", "report_path": ""}
 
-    try:
-        for step in range(1, max_steps + 1):
-            obs = browser.observe()
-            memory.update_observation(obs)
-            tools.set_observation(obs)
-            ref_count = obs.get("snapshot_yaml", "").count("[ref=")
-            console.print(
-                f"\n[bold]Step {step}/{max_steps}[/bold] "
-                f"[dim]URL:[/dim] {escape(obs.get('url', ''))} "
-                f"[dim]Title:[/dim] {escape(obs.get('title', ''))} "
-                f"[dim]Refs:[/dim] {ref_count}"
-            )
+    ui_print(f"[bold green]Final Planned Goals:[/bold green] {sub_goals}")
 
-            action = llm.plan(memory.to_prompt_payload(), memory.get_current_screenshot())
-            console.print(f"[bold green]Assistant:[/bold green] {escape(str(action.get('thought', '')))}")
-            console.print(f"[bold blue]Using tool:[/bold blue] {escape(str(action.get('tool', '')))}")
-            console.print(f"[dim]Input:[/dim] {escape(compact_json(action.get('args', {})))}")
+    final_status = "success"
+    final_summary = "All goals completed."
 
-            result = _execute_with_safety(action, obs, tools, console)
+    for current_goal in sub_goals:
+        ui_print(Panel.fit(escape(current_goal), title="Current Sub-Goal", border_style="cyan"))
+        memory = Memory(current_goal, db_path="memory.db")
+        tools = ToolDispatcher(browser=browser, llm_client=llm, console=console)
+        tools.ask_user = lambda q: {"ok": True, "message": "user answered", "data": {"answer": wait_for_user_input(q)}}
 
-            console.print(
-                f"[bold]Result:[/bold] {'OK' if result.get('ok') else 'ERROR'} - "
-                f"{escape(str(result.get('message', '')))}"
-            )
-            memory.merge_facts(action.get("new_facts", {}))
-            memory.add_action(action, result)
-            append_action_log(step, action, result, obs)
+        try:
+            goal_completed = False
 
-            if _is_llm_provider_fallback_action(action):
-                decision = _llm_provider_fallback_decision(result)
-                if decision == "retry":
-                    console.print("[yellow]Retry requested after LLM provider error.[/yellow]")
-                    continue
-                if decision == "stop":
-                    summary = "Stopped by user after the LLM provider returned an error or rate limit."
-                    report_path = write_final_report(goal, "stopped_by_user", summary)
-                    console.print(Panel(escape(summary), title="Final report: stopped_by_user", border_style="yellow"))
-                    console.print(f"[dim]Saved final report:[/dim] {report_path}")
-                    return {
-                        "ok": False,
-                        "status": "stopped_by_user",
-                        "summary": summary,
-                        "report_path": str(report_path),
-                    }
-                console.print("[yellow]Continuing after LLM provider fallback answer.[/yellow]")
-                continue
+            while not goal_completed:
+                steps_taken = 0
+                stuck = False
 
-            if action.get("tool") == "done":
-                status = str(action.get("args", {}).get("status", result.get("data", {}).get("status", "success")))
-                summary = str(action.get("args", {}).get("summary", result.get("data", {}).get("summary", "")))
-                report_path = write_final_report(goal, status, summary)
-                console.print(Panel(escape(summary), title=escape(f"Final report: {status}"), border_style="green"))
-                console.print(f"[dim]Saved final report:[/dim] {report_path}")
-                return {"ok": status == "success", "status": status, "summary": summary, "report_path": str(report_path)}
+                for step in range(1, max_steps + 1):
+                    steps_taken = step
 
-        summary = f"Stopped after reaching max_steps={max_steps} before the task was completed."
-        report_path = write_final_report(goal, "failed", summary)
-        console.print(Panel(escape(summary), title="Final report: failed", border_style="red"))
-        return {"ok": False, "status": "failed", "summary": summary, "report_path": str(report_path)}
+                    if handle_interrupt(memory):
+                        return {"ok": False, "status": "stopped_by_user", "summary": "Interrupted", "report_path": ""}
 
-    except KeyboardInterrupt:
-        summary = "Stopped by user with KeyboardInterrupt."
-        report_path = write_final_report(goal, "stopped_by_user", summary)
-        console.print("\n[yellow]Stopped by user.[/yellow]")
-        return {"ok": False, "status": "stopped_by_user", "summary": summary, "report_path": str(report_path)}
+                    obs = browser.observe()
+                    memory.update_observation(obs)
+                    tools.set_observation(obs)
+                    ref_count = obs.get("snapshot_yaml", "").count("[ref=")
+                    ui_print(
+                        f"\n[bold]Step {step}/{max_steps}[/bold] "
+                        f"[dim]URL:[/dim] {escape(obs.get('url', ''))} "
+                        f"[dim]Refs:[/dim] {ref_count}"
+                    )
 
+                    action = llm.plan(memory.to_prompt_payload(), memory.get_current_screenshot())
+                    ui_print(f"[bold green]Assistant:[/bold green] {escape(str(action.get('thought', '')))}")
+                    ui_print(f"[bold blue]Using tool:[/bold blue] {escape(str(action.get('tool', '')))}")
+
+                    result = _execute_with_safety(action, obs, tools, console)
+
+                    memory.merge_facts(action.get("new_facts", {}))
+                    memory.add_action(action, result)
+                    append_action_log(step, action, result, obs)
+
+                    if _is_llm_provider_fallback_action(action):
+                        decision = _llm_provider_fallback_decision(result)
+                        if decision == "retry":
+                            continue
+                        if decision == "stop":
+                            return {"ok": False, "status": "stopped_by_user", "summary": "Stopped.", "report_path": ""}
+                        continue
+
+                    if action.get("tool") == "done":
+                        goal_completed = True
+                        break
+
+                if not goal_completed and steps_taken >= max_steps:
+                    ui_print(f"[bold red]Stuck Detection:[/bold red] Goal exceeded {max_steps} steps.")
+                    ans = wait_for_user_input("Agent is stuck. Enter new instructions to reset and continue, or 'stop' to abort:")
+                    if ans.lower().strip() == 'stop':
+                        final_status = "failed"
+                        final_summary = f"Stopped after {max_steps} steps."
+                        goal_completed = True # Break outer while
+                    else:
+                        ui_print("[bold green]Resetting step limit and continuing with new instructions.[/bold green]")
+                        memory.goal = memory.goal + " | Additional user instructions: " + ans
+
+        except Exception as e:
+            ui_print(f"[red]Error:[/red] {e}")
+            return {"ok": False, "status": "error", "summary": str(e), "report_path": ""}
+
+        if final_status != "success":
+            break
+
+    return {"ok": final_status == "success", "status": final_status, "summary": final_summary, "report_path": ""}
+
+def _orchestrate_goals(goal: str, llm: LLMClient) -> list[str]:
+    context = goal
+    while True:
+        messages = [
+            {"role": "system", "content": "You are a planner. Either ask the user a clarifying question starting with 'QUESTION: ', or if the task is clear, output ONLY a JSON list of 1-3 sequential strings representing sub-goals."},
+            {"role": "user", "content": f"Task/Context: {context}"}
+        ]
+        try:
+            models = llm._candidate_models(llm.model)
+            for model in models:
+                res = llm._chat_completion_with_retries(model=model, messages=messages, temperature=0.1)
+                content = res.choices[0].message.content or ""
+
+                if content.strip().startswith("QUESTION:"):
+                    ans = wait_for_user_input(content.strip())
+                    if ans.lower().strip() == 'stop':
+                        return []
+                    context += f"\nQ: {content}\nA: {ans}"
+                    break # Go to next while iteration
+
+                # Try extract JSON
+                start = content.find("[")
+                end = content.rfind("]")
+                if start != -1 and end != -1:
+                    return json.loads(content[start:end+1])
+        except Exception:
+            pass
+
+        # Fallback to simple split if LLM fails
+        if " and " in goal:
+            return goal.split(" and ")
+        return [goal]
 
 def _execute_with_safety(
     action: dict[str, Any],
@@ -104,33 +172,20 @@ def _execute_with_safety(
 
     high_risk, reason = is_high_risk(action, obs)
     if high_risk:
-        console.print(f"[bold yellow]High-risk action detected:[/bold yellow] {escape(str(reason))}")
-        answer = input("Execute? [y/N]\n> ")
-        if not user_confirmed(answer):
-            return {
-                "ok": False,
-                "message": "user declined high-risk action",
-                "data": {"reason": reason},
-            }
+        ans = wait_for_user_input(f"High risk action: {reason}. Execute? [y/N]")
+        if not user_confirmed(ans):
+            return {"ok": False, "message": "declined", "data": {}}
 
     return tools.dispatch(action)
-
 
 def pretty_action(action: dict[str, Any]) -> str:
     return json.dumps(action, ensure_ascii=False, indent=2, default=str)
 
-
 def _is_llm_provider_fallback_action(action: dict[str, Any]) -> bool:
-    if action.get("tool") != "ask_user":
-        return False
-    question = str((action.get("args") or {}).get("question", ""))
-    return "LLM provider returned an error or rate limit" in question
-
+    return action.get("tool") == "ask_user" and "LLM provider" in str(action.get("args", {}).get("question", ""))
 
 def _llm_provider_fallback_decision(result: dict[str, Any]) -> str:
     answer = str(result.get("data", {}).get("answer", "")).strip().lower()
-    if answer in LLM_FALLBACK_RETRY_ANSWERS:
-        return "retry"
-    if answer in LLM_FALLBACK_STOP_ANSWERS:
-        return "stop"
+    if answer in LLM_FALLBACK_RETRY_ANSWERS: return "retry"
+    if answer in LLM_FALLBACK_STOP_ANSWERS: return "stop"
     return "continue"
