@@ -30,9 +30,13 @@ def append_safety_audit(
     observation: dict[str, Any] | None,
     user_decision: str | None = None,
     model: str | None = None,
+    audit_path: Path | None = None,
+    run_id: str | None = None,
+    browser_mode: str | None = None,
 ) -> None:
     obs = observation or {}
-    AUDIT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    target = Path(audit_path) if audit_path is not None else AUDIT_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "step": step,
@@ -51,7 +55,11 @@ def append_safety_audit(
         "model": model,
         "native_tool_call_id": action.native_tool_call_id,
     }
-    with AUDIT_PATH.open("a", encoding="utf-8", newline="\n") as file:
+    if run_id is not None:
+        record["run_id"] = run_id
+    if browser_mode is not None:
+        record["browser_mode"] = browser_mode
+    with target.open("a", encoding="utf-8", newline="\n") as file:
         file.write(json.dumps(record, ensure_ascii=False, default=_json_default) + "\n")
 
 

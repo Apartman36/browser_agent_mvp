@@ -28,6 +28,95 @@ copy .env.example .env
 - The agent observes pages with Playwright ARIA snapshots and acts only through current `aria-ref` values from the latest observation.
 - Re-observe after navigation or mutation; refs are ephemeral and can become stale when the page changes.
 
+## Browser runtime modes
+
+The agent supports two launch modes. Defaults preserve the historical behavior, so doing nothing keeps the existing Playwright Chromium flow.
+
+### Default: bundled Chromium
+
+```env
+BROWSER_MODE=chromium
+```
+
+- Playwright launches its bundled Chromium binary.
+- Persistent profile directory: `.pw_profile` (or `CHROMIUM_USER_DATA_DIR` if set).
+- No Chrome channel is passed to Playwright.
+- This is the recommended mode for tests and for the most reproducible demo.
+
+### Optional: installed Google Chrome with a separate agent profile
+
+```env
+BROWSER_MODE=chrome_profile
+CHROME_CHANNEL=chrome
+CHROME_USER_DATA_DIR=C:\Users\<you>\browser-agent-chrome-profile
+```
+
+- Playwright launches the locally installed Google Chrome via `channel="chrome"`.
+- Persistent profile directory is a **separate** agent profile path you control.
+- The agent never points Playwright at the user's main Chrome profile.
+- First run: use `--login-wait` to log in manually inside the agent profile. Subsequent runs reuse cookies and `localStorage` from that profile.
+- Do not put banking, government, primary email, or other sensitive accounts in the agent profile.
+- This is purely about running inside real Chrome with a controlled profile. It is **not** stealth, anti-detection, or anti-bot evasion. Sites may still detect automation patterns or disallow automated actions.
+- Respect site Terms of Service. Use the HITL confirmation flow for final actions such as Send/Post/Apply/Buy/Delete.
+- If Chrome is not installed, the agent prints a clear error: `Chrome channel not available. Install Google Chrome or use BROWSER_MODE=chromium.`
+
+### Optional action pacing and slow_mo
+
+```env
+BROWSER_SLOW_MO_MS=150
+ACTION_MIN_DELAY_MS=800
+ACTION_MAX_DELAY_MS=2500
+```
+
+- `BROWSER_SLOW_MO_MS` is Playwright's built-in `slow_mo`. Used for observability/stability, not stealth. Set to `0` to disable.
+- `ACTION_MIN_DELAY_MS` and `ACTION_MAX_DELAY_MS` add an optional random pre-action sleep before `goto`, `click_element`, `type_text`, `press_key`, and `scroll`. Set both to `0` to disable.
+- If both delays are `0`, the default flow runs with no extra sleeping.
+- If `max < min`, the agent raises a clear `ValueError` at config load.
+
+### PowerShell example — first login into the agent Chrome profile
+
+```powershell
+$env:BROWSER_MODE = "chrome_profile"
+$env:CHROME_USER_DATA_DIR = "C:\Users\hustlePC\browser-agent-chrome-profile"
+$env:BROWSER_SLOW_MO_MS = "150"
+$env:ACTION_MIN_DELAY_MS = "800"
+$env:ACTION_MAX_DELAY_MS = "2500"
+
+.\.venv\Scripts\python.exe run.py --start-url https://example.com --max-steps 3 "Open example.com, read the page title, and finish."
+```
+
+Manual-login pattern (open a site, pause for you to sign in, then observe):
+
+```powershell
+.\.venv\Scripts\python.exe run.py --start-url https://example.com --login-wait --max-steps 3 "Open the site and wait for me to log in manually. Then observe the page and stop."
+```
+
+Generic browser assistant example (GitHub docs page):
+
+```powershell
+.\.venv\Scripts\python.exe run.py --start-url https://docs.github.com --max-steps 4 "Open the GitHub docs, read the top of the page, and finish with a one-line summary."
+```
+
+## Per-run logs
+
+Each `run_agent` invocation creates its own directory under `RUN_LOG_ROOT` (default `logs/runs`).
+
+```
+logs/
+  runs/
+    2026-05-16_21-43-12/
+      metadata.json
+      actions.jsonl
+      safety_audit.jsonl
+      final_report.md
+      screenshots/
+        20260516_214315_123456.png
+```
+
+`metadata.json` includes the run id, started/ended timestamps, status, goal, planner mode, model, browser mode, browser channel (when applicable), profile dir, slow_mo, configured action delays, max steps, and start URL. No API keys, cookies, or `.env` contents are written there.
+
+The CLI prints `Saved run logs: logs\runs\<run_id>` when the run finishes.
+
 Copy `.env.example` to `.env`, set `OPENROUTER_API_KEY`, then replace the model
 placeholders with OpenRouter model IDs verified for your account.
 

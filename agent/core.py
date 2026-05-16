@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
 from pydantic import ValidationError
 from rich.console import Console
 from rich.panel import Panel
 
-from agent.config import load_config
+from agent.config import AgentConfig, load_config
 from agent.llm import LLMClient
 from agent.logging_utils import append_action_log, write_final_report
 from agent.memory import Memory
 from agent.planners import create_planner
 from agent.planners.base import PlannerAction
+from agent.run_context import RunContext, create_run_context
 from agent.safety import user_confirmed
 from agent.safety_audit import append_safety_audit
 from agent.safety_engine import SafetyEngine
@@ -24,7 +26,15 @@ LLM_FALLBACK_RETRY_ANSWERS = {"retry", "r", "повтор", "повтори"}
 LLM_FALLBACK_STOP_ANSWERS = {"stop", "s", "стоп"}
 
 
-def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClient | None = None) -> dict[str, Any]:
+def run_agent(
+    goal: str,
+    browser: Any,
+    max_steps: int = 25,
+    llm_client: LLMClient | None = None,
+    *,
+    run_context: RunContext | None = None,
+    start_url: str | None = None,
+) -> dict[str, Any]:
     console = Console()
     config = load_config()
     registry = TOOL_REGISTRY
@@ -34,7 +44,19 @@ def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClien
     memory = Memory(goal)
     tools = ToolDispatcher(browser=browser, llm_client=llm, console=console)
 
+    run_ctx = run_context or create_run_context(config.run_log_root)
+    _initialize_run_metadata(run_ctx, config, llm, goal, max_steps, start_url)
+    set_screenshot_dir = getattr(browser, "set_screenshot_dir", None)
+    if callable(set_screenshot_dir):
+        set_screenshot_dir(run_ctx.screenshots_dir)
+
     console.print(Panel.fit(goal, title="User task", border_style="cyan"))
+    console.print(f"[dim]Run id:[/dim] {run_ctx.run_id}  [dim]Logs:[/dim] {run_ctx.run_dir}")
+
+    final_status: str | None = None
+    final_summary: str = ""
+    final_ok: bool = False
+    final_report_path: str | None = None
 
     try:
         for step in range(1, max_steps + 1):
@@ -64,6 +86,8 @@ def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClien
                 console=console,
                 safety_engine=safety_engine,
                 model=llm.model,
+                run_ctx=run_ctx,
+                browser_mode=config.browser.mode,
             )
             planner.append_tool_result(action_model, result)
 
@@ -73,7 +97,7 @@ def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClien
             )
             memory.merge_facts(action.get("new_facts", {}))
             memory.add_action(action, result)
-            append_action_log(step, action, result, obs)
+            append_action_log(step, action, result, obs, log_path=run_ctx.actions_log_path)
 
             if _is_llm_provider_fallback_action(action):
                 decision = _llm_provider_fallback_decision(result)
@@ -81,15 +105,24 @@ def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClien
                     console.print("[yellow]Retry requested after LLM provider error.[/yellow]")
                     continue
                 if decision == "stop":
-                    summary = "Stopped by user after the LLM provider returned an error or rate limit."
-                    report_path = write_final_report(goal, "stopped_by_user", summary)
-                    console.print(Panel(summary, title="Final report: stopped_by_user", border_style="yellow"))
+                    final_summary = "Stopped by user after the LLM provider returned an error or rate limit."
+                    final_status = "stopped_by_user"
+                    final_ok = False
+                    report_path = write_final_report(
+                        goal, final_status, final_summary, report_path=run_ctx.final_report_path
+                    )
+                    final_report_path = str(report_path)
+                    console.print(Panel(final_summary, title="Final report: stopped_by_user", border_style="yellow"))
                     console.print(f"[dim]Saved final report:[/dim] {report_path}")
+                    console.print(f"[dim]Saved run logs:[/dim] {run_ctx.run_dir}")
+                    _finalize_run_metadata(run_ctx, final_status, final_summary, final_ok)
                     return {
                         "ok": False,
-                        "status": "stopped_by_user",
-                        "summary": summary,
-                        "report_path": str(report_path),
+                        "status": final_status,
+                        "summary": final_summary,
+                        "report_path": final_report_path,
+                        "run_id": run_ctx.run_id,
+                        "run_dir": str(run_ctx.run_dir),
                     }
                 console.print("[yellow]Continuing after LLM provider fallback answer.[/yellow]")
                 continue
@@ -97,21 +130,58 @@ def run_agent(goal: str, browser: Any, max_steps: int = 25, llm_client: LLMClien
             if action_model.tool == "done":
                 status = str(action_model.args.get("status", result.get("data", {}).get("status", "success")))
                 summary = str(action_model.args.get("summary", result.get("data", {}).get("summary", "")))
-                report_path = write_final_report(goal, status, summary)
+                final_status = status
+                final_summary = summary
+                final_ok = status == "success"
+                report_path = write_final_report(goal, status, summary, report_path=run_ctx.final_report_path)
+                final_report_path = str(report_path)
                 console.print(Panel(summary, title=f"Final report: {status}", border_style="green"))
                 console.print(f"[dim]Saved final report:[/dim] {report_path}")
-                return {"ok": status == "success", "status": status, "summary": summary, "report_path": str(report_path)}
+                console.print(f"[dim]Saved run logs:[/dim] {run_ctx.run_dir}")
+                _finalize_run_metadata(run_ctx, final_status, final_summary, final_ok)
+                return {
+                    "ok": final_ok,
+                    "status": status,
+                    "summary": summary,
+                    "report_path": final_report_path,
+                    "run_id": run_ctx.run_id,
+                    "run_dir": str(run_ctx.run_dir),
+                }
 
-        summary = f"Stopped after reaching max_steps={max_steps} before the task was completed."
-        report_path = write_final_report(goal, "failed", summary)
-        console.print(Panel(summary, title="Final report: failed", border_style="red"))
-        return {"ok": False, "status": "failed", "summary": summary, "report_path": str(report_path)}
+        final_summary = f"Stopped after reaching max_steps={max_steps} before the task was completed."
+        final_status = "failed"
+        final_ok = False
+        report_path = write_final_report(goal, final_status, final_summary, report_path=run_ctx.final_report_path)
+        final_report_path = str(report_path)
+        console.print(Panel(final_summary, title="Final report: failed", border_style="red"))
+        console.print(f"[dim]Saved run logs:[/dim] {run_ctx.run_dir}")
+        _finalize_run_metadata(run_ctx, final_status, final_summary, final_ok)
+        return {
+            "ok": False,
+            "status": final_status,
+            "summary": final_summary,
+            "report_path": final_report_path,
+            "run_id": run_ctx.run_id,
+            "run_dir": str(run_ctx.run_dir),
+        }
 
     except KeyboardInterrupt:
-        summary = "Stopped by user with KeyboardInterrupt."
-        report_path = write_final_report(goal, "stopped_by_user", summary)
+        final_summary = "Stopped by user with KeyboardInterrupt."
+        final_status = "stopped_by_user"
+        final_ok = False
+        report_path = write_final_report(goal, final_status, final_summary, report_path=run_ctx.final_report_path)
+        final_report_path = str(report_path)
         console.print("\n[yellow]Stopped by user.[/yellow]")
-        return {"ok": False, "status": "stopped_by_user", "summary": summary, "report_path": str(report_path)}
+        console.print(f"[dim]Saved run logs:[/dim] {run_ctx.run_dir}")
+        _finalize_run_metadata(run_ctx, final_status, final_summary, final_ok)
+        return {
+            "ok": False,
+            "status": final_status,
+            "summary": final_summary,
+            "report_path": final_report_path,
+            "run_id": run_ctx.run_id,
+            "run_dir": str(run_ctx.run_dir),
+        }
 
 
 def _execute_with_safety(
@@ -123,6 +193,8 @@ def _execute_with_safety(
     console: Console,
     safety_engine: SafetyEngine,
     model: str | None = None,
+    run_ctx: RunContext | None = None,
+    browser_mode: str | None = None,
 ) -> dict[str, Any]:
     spec = TOOL_REGISTRY.get(action.tool)
     decision = safety_engine.evaluate(action, spec, obs, memory=memory)
@@ -132,6 +204,12 @@ def _execute_with_safety(
             f"({decision.policy_rule}) - {decision.reason}"
         )
 
+    audit_kwargs = {
+        "audit_path": run_ctx.safety_audit_path if run_ctx else None,
+        "run_id": run_ctx.run_id if run_ctx else None,
+        "browser_mode": browser_mode,
+    }
+
     if decision.blocked:
         append_safety_audit(
             step=step,
@@ -140,6 +218,7 @@ def _execute_with_safety(
             observation=obs,
             user_decision="blocked_by_policy",
             model=model,
+            **audit_kwargs,
         )
         return {
             "ok": False,
@@ -157,6 +236,7 @@ def _execute_with_safety(
                 observation=obs,
                 user_decision="denied",
                 model=model,
+                **audit_kwargs,
             )
             return {
                 "ok": False,
@@ -170,9 +250,10 @@ def _execute_with_safety(
             observation=obs,
             user_decision="approved",
             model=model,
+            **audit_kwargs,
         )
     else:
-        append_safety_audit(step=step, action=action, decision=decision, observation=obs, model=model)
+        append_safety_audit(step=step, action=action, decision=decision, observation=obs, model=model, **audit_kwargs)
 
     return tools.dispatch(action.to_action_dict())
 
@@ -214,3 +295,48 @@ def _llm_provider_fallback_decision(result: dict[str, Any]) -> str:
     if answer in LLM_FALLBACK_STOP_ANSWERS:
         return "stop"
     return "continue"
+
+
+def _initialize_run_metadata(
+    run_ctx: RunContext,
+    config: AgentConfig,
+    llm: LLMClient,
+    goal: str,
+    max_steps: int,
+    start_url: str | None,
+) -> None:
+    browser = config.browser
+    run_ctx.write_initial_metadata(
+        {
+            "run_id": run_ctx.run_id,
+            "started_at": run_ctx.started_at,
+            "status": "running",
+            "goal": goal,
+            "max_steps": max_steps,
+            "start_url": start_url or config.start_url or "",
+            "planner_mode": config.planner_mode,
+            "model": getattr(llm, "model", "") or "",
+            "browser_mode": browser.mode,
+            "browser_channel": browser.active_channel(),
+            "browser_profile_dir": str(browser.active_user_data_dir()),
+            "browser_slow_mo_ms": browser.slow_mo_ms,
+            "action_min_delay_ms": browser.action_min_delay_ms,
+            "action_max_delay_ms": browser.action_max_delay_ms,
+        }
+    )
+
+
+def _finalize_run_metadata(
+    run_ctx: RunContext,
+    status: str | None,
+    summary: str,
+    ok: bool,
+) -> None:
+    run_ctx.update_metadata(
+        {
+            "ended_at": datetime.now().replace(microsecond=0).isoformat(),
+            "status": status or "unknown",
+            "ok": ok,
+            "summary_excerpt": summary[:240],
+        }
+    )

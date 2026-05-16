@@ -32,7 +32,9 @@ from rich.console import Console  # noqa: E402
 from rich.panel import Panel  # noqa: E402
 
 from agent.browser import Browser  # noqa: E402
+from agent.config import load_config  # noqa: E402
 from agent.core import run_agent  # noqa: E402
+from agent.run_context import create_run_context  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,10 +53,18 @@ def main() -> int:
     console = Console()
 
     goal = " ".join(args.task)
-    start_url = args.start_url or os.getenv("START_URL", "")
-    max_steps = args.max_steps or int(os.getenv("MAX_STEPS", "25"))
+    config = load_config()
+    start_url = args.start_url or config.start_url
+    max_steps = args.max_steps or config.max_steps
 
-    with Browser() as browser:
+    run_ctx = create_run_context(config.run_log_root)
+    console.print(f"[bold]Browser mode:[/bold] {config.browser.mode}")
+    console.print(f"[bold]Profile dir:[/bold] {config.browser.active_user_data_dir()}")
+    if config.browser.active_channel():
+        console.print(f"[bold]Chrome channel:[/bold] {config.browser.active_channel()}")
+    console.print(f"[bold]Run dir:[/bold] {run_ctx.run_dir}")
+
+    with Browser(runtime=config.browser, screenshot_dir=run_ctx.screenshots_dir) as browser:
         if start_url:
             console.print(f"[bold blue]Opening:[/bold blue] {start_url}")
             result = browser.goto(start_url)
@@ -72,12 +82,18 @@ def main() -> int:
                 "No OpenRouter call was made."
             )
             console.print(Panel(summary, title="Dry run observation", border_style="cyan"))
+            console.print(f"[dim]Saved run logs:[/dim] {run_ctx.run_dir}")
             return 0
 
-        result = run_agent(goal=goal, browser=browser, max_steps=max_steps)
+        result = run_agent(
+            goal=goal,
+            browser=browser,
+            max_steps=max_steps,
+            run_context=run_ctx,
+            start_url=start_url,
+        )
         return 0 if result.get("ok") else 1
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
